@@ -15,8 +15,12 @@ namespace WirelessBattery;
 public partial class MainWindow : Window
 {
     private DrawingPoint? trayAnchor;
+    private bool syncingOptions;
 
     internal event EventHandler? RefreshRequested;
+    internal event EventHandler? WidgetToggleRequested;
+    internal event EventHandler? StartupToggleRequested;
+    internal event EventHandler? DesktopShortcutRequested;
     internal bool AllowClose { get; set; }
     internal bool IsPreview { get; set; }
 
@@ -26,7 +30,7 @@ public partial class MainWindow : Window
         SizeChanged += (_, _) => Dispatcher.InvokeAsync(PositionNearTray, DispatcherPriority.Loaded);
         Deactivated += (_, _) =>
         {
-            if (!IsPreview)
+            if (!IsPreview && !OptionsMenu.IsOpen)
                 Hide();
         };
         SetScanning();
@@ -49,6 +53,7 @@ public partial class MainWindow : Window
     internal void SetDevices(IReadOnlyList<BatteryDevice> devices, DateTime scannedAt)
     {
         RefreshButton.IsEnabled = !IsPreview;
+        OptionsButton.IsEnabled = !IsPreview;
         ModeText.Text = IsPreview ? "示例数据" : "自动刷新";
         UpdatedText.Text = IsPreview ? "界面预览" : $"更新于 {scannedAt:HH:mm}";
         if (devices.Count == 0)
@@ -73,6 +78,20 @@ public partial class MainWindow : Window
             .ToArray();
         DeviceScroll.Visibility = Visibility.Visible;
         Placeholder.Visibility = Visibility.Collapsed;
+    }
+
+    internal void SetOptions(bool widgetVisible, bool startsWithWindows)
+    {
+        syncingOptions = true;
+        try
+        {
+            WidgetOption.IsChecked = widgetVisible;
+            StartupOption.IsChecked = startsWithWindows;
+        }
+        finally
+        {
+            syncingOptions = false;
+        }
     }
 
     internal void SetError()
@@ -116,12 +135,44 @@ public partial class MainWindow : Window
         if (e.Key == Key.Escape)
         {
             e.Handled = true;
-            DismissPanel();
+            if (OptionsMenu.IsOpen)
+                OptionsMenu.IsOpen = false;
+            else
+                DismissPanel();
         }
         base.OnPreviewKeyDown(e);
     }
 
     private void RefreshClick(object sender, RoutedEventArgs e) => RefreshRequested?.Invoke(this, EventArgs.Empty);
+
+    private void OptionsClick(object sender, RoutedEventArgs e)
+    {
+        OptionsMenu.PlacementTarget = OptionsButton;
+        OptionsMenu.IsOpen = true;
+    }
+
+    private void OptionsClosed(object sender, RoutedEventArgs e)
+    {
+        Dispatcher.InvokeAsync(() =>
+        {
+            if (!IsPreview && !IsActive && !OptionsMenu.IsOpen)
+                Hide();
+        }, DispatcherPriority.Background);
+    }
+
+    private void WidgetChanged(object sender, RoutedEventArgs e)
+    {
+        if (!syncingOptions && !IsPreview)
+            WidgetToggleRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void StartupChanged(object sender, RoutedEventArgs e)
+    {
+        if (!syncingOptions && !IsPreview)
+            StartupToggleRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void DesktopShortcutClick(object sender, RoutedEventArgs e) => DesktopShortcutRequested?.Invoke(this, EventArgs.Empty);
 
     private void HideClick(object sender, RoutedEventArgs e) => DismissPanel();
 

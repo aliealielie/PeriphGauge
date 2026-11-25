@@ -15,12 +15,17 @@ internal sealed class BatteryTray : IDisposable
     private const int MaxTooltipLength = 127;
     private readonly Forms.NotifyIcon notifyIcon;
     private readonly Forms.ContextMenuStrip menu;
+    private readonly Forms.ToolStripMenuItem widgetItem;
+    private readonly Forms.ToolStripMenuItem startupItem;
     private readonly Icon baseIcon;
     private Icon? batteryIcon;
     private int? displayedPercent;
 
     internal event EventHandler<Point?>? OpenRequested;
     internal event EventHandler? RefreshRequested;
+    internal event EventHandler? WidgetToggleRequested;
+    internal event EventHandler? StartupToggleRequested;
+    internal event EventHandler? DesktopShortcutRequested;
     internal event EventHandler? ExitRequested;
 
     internal BatteryTray()
@@ -31,6 +36,14 @@ internal sealed class BatteryTray : IDisposable
         menu = new Forms.ContextMenuStrip();
         menu.Items.Add("打开电量面板", null, (_, _) => OpenRequested?.Invoke(this, null));
         menu.Items.Add("立即刷新", null, (_, _) => RefreshRequested?.Invoke(this, EventArgs.Empty));
+        menu.Items.Add(new Forms.ToolStripSeparator());
+        widgetItem = new Forms.ToolStripMenuItem("显示桌面悬浮窗");
+        widgetItem.Click += (_, _) => WidgetToggleRequested?.Invoke(this, EventArgs.Empty);
+        startupItem = new Forms.ToolStripMenuItem("开机自启动");
+        startupItem.Click += (_, _) => StartupToggleRequested?.Invoke(this, EventArgs.Empty);
+        menu.Items.Add(widgetItem);
+        menu.Items.Add(startupItem);
+        menu.Items.Add("创建桌面快捷方式", null, (_, _) => DesktopShortcutRequested?.Invoke(this, EventArgs.Empty));
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => ExitRequested?.Invoke(this, EventArgs.Empty));
         notifyIcon = new Forms.NotifyIcon
@@ -45,6 +58,12 @@ internal sealed class BatteryTray : IDisposable
             if (click.Button == Forms.MouseButtons.Left)
                 OpenRequested?.Invoke(this, Forms.Cursor.Position);
         };
+    }
+
+    internal void SetOptions(bool widgetVisible, bool startsWithWindows)
+    {
+        widgetItem.Checked = widgetVisible;
+        startupItem.Checked = startsWithWindows;
     }
 
     internal void Update(IReadOnlyList<BatteryDevice> devices)

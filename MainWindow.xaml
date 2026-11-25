@@ -44,6 +44,37 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="OptionsMenuItem" TargetType="MenuItem">
+            <Setter Property="Foreground" Value="#F1F6F5" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Border x:Name="ItemBackground" Background="Transparent" CornerRadius="6" Padding="8,7,12,7">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="18" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Path x:Name="Checkmark" Data="M 1,5 L 4,8 L 9,2" Stroke="{StaticResource Mint}"
+                                      StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                      VerticalAlignment="Center" Visibility="Hidden" />
+                                <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True"
+                                                  VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="ItemBackground" Property="Background" Value="#2B3B41" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Checkmark" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="BatteryBar" TargetType="ProgressBar">
             <Setter Property="Height" Value="4" />
             <Setter Property="Background" Value="#344148" />
@@ -138,6 +169,7 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="32" />
                     <ColumnDefinition Width="32" />
+                    <ColumnDefinition Width="32" />
                 </Grid.ColumnDefinitions>
                 <Border Width="43" Height="43" CornerRadius="13">
                     <Border.Background>
@@ -163,7 +195,32 @@
                           StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                           StrokeLineJoin="Round" Data="M 13.5,6 A 5.25,5.25 0 1 0 13.5,10 M 13.5,3.3 L 13.5,6.2 L 10.6,6.2" />
                 </Button>
-                <Button Grid.Column="3" Style="{StaticResource IconButton}" ToolTip="隐藏面板"
+                <Button x:Name="OptionsButton" Grid.Column="3" Style="{StaticResource IconButton}"
+                        ToolTip="更多选项" AutomationProperties.Name="更多选项" Click="OptionsClick">
+                    <Button.ContextMenu>
+                        <ContextMenu x:Name="OptionsMenu" Placement="Bottom" VerticalOffset="4"
+                                     FontFamily="Segoe UI, Microsoft YaHei UI" Closed="OptionsClosed"
+                                     AutomationProperties.Name="更多选项">
+                            <ContextMenu.Template>
+                                <ControlTemplate TargetType="ContextMenu">
+                                    <Border Background="#202C32" BorderBrush="#405057" BorderThickness="1"
+                                            CornerRadius="11" Padding="5" MinWidth="160">
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle" />
+                                    </Border>
+                                </ControlTemplate>
+                            </ContextMenu.Template>
+                            <MenuItem x:Name="WidgetOption" Header="显示桌面悬浮窗" IsCheckable="True"
+                                      Style="{StaticResource OptionsMenuItem}" Checked="WidgetChanged" Unchecked="WidgetChanged" />
+                            <MenuItem x:Name="StartupOption" Header="开机自启动" IsCheckable="True"
+                                      Style="{StaticResource OptionsMenuItem}" Checked="StartupChanged" Unchecked="StartupChanged" />
+                            <MenuItem Header="创建桌面快捷方式" Style="{StaticResource OptionsMenuItem}"
+                                      Click="DesktopShortcutClick" />
+                        </ContextMenu>
+                    </Button.ContextMenu>
+                    <Path Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                          Data="M 1,3 A 1.1,1.1 0 1 1 3.2,3 A 1.1,1.1 0 1 1 1,3 Z M 6,3 A 1.1,1.1 0 1 1 8.2,3 A 1.1,1.1 0 1 1 6,3 Z M 11,3 A 1.1,1.1 0 1 1 13.2,3 A 1.1,1.1 0 1 1 11,3 Z" />
+                </Button>
+                <Button Grid.Column="4" Style="{StaticResource IconButton}" ToolTip="隐藏面板"
                         AutomationProperties.Name="隐藏面板" Click="HideClick">
                     <Path Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
                           StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
