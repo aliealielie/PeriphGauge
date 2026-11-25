@@ -1,0 +1,315 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using Windows.Devices.Bluetooth;
+using Windows.Devices.Bluetooth.GenericAttributeProfile;
+using Windows.Devices.Enumeration;
+using Windows.Storage.Streams;
+
+namespace WirelessBattery;
+
+internal sealed record BatteryDevice(string Id, string Name, string Kind, string Connection, int? Percent);
+
+internal static class BatteryReader
+{
+    private const string AddressProperty = "System.Devices.Aep.DeviceAddress";
+    private const string CategoryProperty = "System.Devices.Aep.Category";
+    private const string ContainerProperty = "System.Devices.Aep.ContainerId";
+    private const uint DevpropByte = 0x03;
+    private const uint DevpropGuid = 0x0D;
+
+    private static readonly PropertyKey Battery = new("104ea319-6ee2-4701-bd47-8ddbf425bbe5", 2);
+    private static readonly PropertyKey BusName = new("540b947e-8b40-45bc-a8a2-6a0b894cbda2", 4);
+    private static readonly PropertyKey Container = new("8c7ed206-3f8a-4827-b3ab-ae9e1faefc6c", 2);
+    private static readonly PropertyKey Category = new("78c34fc8-104a-4aca-9ea4-524d52996e57", 90);
+
+    internal static List<BatteryDevice> Read() => ReadAsync().GetAwaiter().GetResult();
+
+    internal static async Task<List<BatteryDevice>> ReadAsync()
+    {
+        string[] instanceIds = PresentDeviceIds();
+        BluetoothNode[] bluetoothNodes = instanceIds
+            .Where(id => StartsWith(id, @"BTHLE\") || StartsWith(id, @"BTHENUM\")
+                || StartsWith(id, @"BTHHFENUM\") || StartsWith(id, @"BTHLEDEVICE\"))
+            .Select(ReadBluetoothNode)
+            .OfType<BluetoothNode>()
+            .ToArray();
+
+        var bluetooth = ReadBluetoothDevicesAsync(bluetoothNodes);
+        var usb = ReadReceiversAsync(instanceIds);
+        var results = await Task.WhenAll(bluetooth, usb).ConfigureAwait(false);
+        return results.SelectMany(group => group)
+            .OrderBy(device => device.Connection == "蓝牙" ? 0 : 1)
+            .ThenBy(device => device.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+    }
+
+    private static async Task<BatteryDevice[]> ReadBluetoothDevicesAsync(BluetoothNode[] nodes)
+    {
+        var le = EnumerateBluetoothAsync(true);
+        var classic = EnumerateBluetoothAsync(false);
+        var endpoints = (await Task.WhenAll(le, classic).ConfigureAwait(false))
+            .SelectMany(group => group);
+        var devices = await Task.WhenAll(endpoints.Select(endpoint => ReadEndpointAsync(endpoint, nodes)))
+            .ConfigureAwait(false);
+
+        return devices.GroupBy(device => device.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.FirstOrDefault(device => device.Percent.HasValue) ?? group.First())
+            .ToArray();
+    }
+
+    private static async Task<BluetoothEndpoint[]> EnumerateBluetoothAsync(bool isLowEnergy)
+    {
+        try
+        {
+            string selector = isLowEnergy
+                ? BluetoothLEDevice.GetDeviceSelectorFromConnectionStatus(BluetoothConnectionStatus.Connected)
+                : BluetoothDevice.GetDeviceSelectorFromConnectionStatus(BluetoothConnectionStatus.Connected);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var devices = await DeviceInformation.FindAllAsync(selector,
+                [AddressProperty, CategoryProperty, ContainerProperty],
+                DeviceInformationKind.AssociationEndpoint).AsTask(timeout.Token).ConfigureAwait(false);
+            return devices.Where(device => !string.IsNullOrWhiteSpace(device.Name))
+                .Select(device => new BluetoothEndpoint(device, isLowEnergy))
+                .ToArray();
+        }
+        catch (Exception ex) when (ex is COMException or UnauthorizedAccessException or OperationCanceledException)
+        {
+            return [];
+        }
+    }
+
+    private static async Task<BatteryDevice> ReadEndpointAsync(BluetoothEndpoint endpoint, BluetoothNode[] nodes)
+    {
+        var info = endpoint.Info;
+        var properties = info.Properties;
+        properties.TryGetValue(AddressProperty, out object? addressValue);
+        string address = (addressValue as string ?? "").Replace(":", "").Replace("-", "");
+        if (address.Length != 12 || !address.All(Uri.IsHexDigit))
+            address = "";
+
+        properties.TryGetValue(ContainerProperty, out object? containerValue);
+        Guid containerId = containerValue is Guid guid ? guid : Guid.Empty;
+        var addressNodes = nodes.Where(node => address.Length > 0 && Contains(node.Id, address)).ToArray();
+        var primaryNode = addressNodes.FirstOrDefault(node =>
+            StartsWith(node.Id, @"BTHLE\DEV_") || StartsWith(node.Id, @"BTHENUM\DEV_"));
+        if (primaryNode?.ContainerId is Guid primaryContainer && primaryContainer != Guid.Empty)
+            containerId = primaryContainer;
+
+        var matchingNodes = nodes.Where(node => containerId != Guid.Empty && node.ContainerId == containerId)
+            .Concat(addressNodes).Distinct();
+        int? windowsLevel = primaryNode?.Level
+            ?? matchingNodes.Select(node => node.Level).FirstOrDefault(level => level.HasValue);
+        int? gattLevel = endpoint.IsLowEnergy
+            ? await ReadGattBatteryAsync(info.Id).ConfigureAwait(false)
+            : null;
+
+        properties.TryGetValue(CategoryProperty, out object? categoryValue);
+        string categories = $"{string.Join(' ', categoryValue as string[] ?? [])} {primaryNode?.Category}";
+        string stableId = containerId != Guid.Empty ? containerId.ToString() : address;
+        return new BatteryDevice($"bluetooth:{(stableId.Length > 0 ? stableId : info.Id)}",
+            info.Name.Trim(), DeviceKind(info.Name, categories), "蓝牙", gattLevel ?? windowsLevel);
+    }
+
+    private static async Task<int?> ReadGattBatteryAsync(string id)
+    {
+        int? level = null;
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            using var device = await BluetoothLEDevice.FromIdAsync(id).AsTask(timeout.Token).ConfigureAwait(false);
+            if (device is null || device.ConnectionStatus != BluetoothConnectionStatus.Connected)
+                return null;
+
+            var services = await device.GetGattServicesForUuidAsync(GattServiceUuids.Battery, BluetoothCacheMode.Cached)
+                .AsTask(timeout.Token).ConfigureAwait(false);
+            if (services.Status != GattCommunicationStatus.Success)
+                return null;
+
+            try
+            {
+                foreach (var service in services.Services)
+                {
+                    var characteristics = await service.GetCharacteristicsForUuidAsync(GattCharacteristicUuids.BatteryLevel,
+                        BluetoothCacheMode.Cached).AsTask(timeout.Token).ConfigureAwait(false);
+                    if (characteristics.Status != GattCommunicationStatus.Success)
+                        continue;
+
+                    foreach (var characteristic in characteristics.Characteristics)
+                    {
+                        var result = await characteristic.ReadValueAsync(BluetoothCacheMode.Uncached)
+                            .AsTask(timeout.Token).ConfigureAwait(false);
+                        if (result.Status != GattCommunicationStatus.Success || result.Value.Length != 1)
+                            continue;
+                        using var reader = DataReader.FromBuffer(result.Value);
+                        byte value = reader.ReadByte();
+                        if (value <= 100)
+                            level = Math.Min(level ?? value, value);
+                    }
+                }
+            }
+            finally
+            {
+                foreach (var service in services.Services)
+                    service.Dispose();
+            }
+        }
+        catch (Exception ex) when (ex is COMException or UnauthorizedAccessException or OperationCanceledException)
+        {
+            // A device can go to sleep or disconnect between enumeration and the GATT read.
+        }
+        return level;
+    }
+
+    private static async Task<BatteryDevice[]> ReadReceiversAsync(string[] instanceIds)
+    {
+        var devices = new List<BatteryDevice>();
+        foreach (string id in instanceIds)
+        {
+            if (!StartsWith(id, @"USB\VID_") || Contains(id, "&MI_") || !Locate(id, out uint node))
+                continue;
+
+            string name = ReadText(node, BusName);
+            bool isMchoseMouse = StartsWith(id, @"USB\VID_2023&PID_F013\");
+            bool is24GHz = isMchoseMouse || Contains(name, "2.4G") || Contains(name, "2.4 GHz");
+            bool isWireless = is24GHz
+                || Contains(name, "wireless receiver") || Contains(name, "wireless dongle")
+                || name.Contains("无线接收器", StringComparison.Ordinal);
+            if (!isWireless || (!isMchoseMouse && !HasHidInterface(id, node, instanceIds)))
+                continue;
+
+            var (level, model) = await ReceiverBattery.ReadAsync(id).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(model))
+                name = model;
+            else if (isMchoseMouse)
+                name = "MCHOSE A5";
+            else if (Contains(name, "2.4G Wireless Receiver"))
+                name = "2.4G 无线接收器";
+
+            devices.Add(new BatteryDevice(id, name, isMchoseMouse ? "mouse" : DeviceKind(name, ReadText(node, Category)),
+                is24GHz ? "2.4G 接收器" : "USB 无线接收器", level is >= 0 and <= 100 ? level : null));
+        }
+        return devices.ToArray();
+    }
+
+    private static bool HasHidInterface(string id, uint node, string[] instanceIds)
+    {
+        int identifierEnd = id.IndexOf('\\', 4);
+        Guid usbContainer = ReadContainer(node);
+        if (identifierEnd < 0 || usbContainer == Guid.Empty)
+            return false;
+
+        string hidPrefix = "HID" + id[3..identifierEnd];
+        return instanceIds.Any(candidate =>
+            StartsWith(candidate, hidPrefix) && Locate(candidate, out uint hidNode) && ReadContainer(hidNode) == usbContainer);
+    }
+
+    private static string DeviceKind(string name, string categories)
+    {
+        string description = $"{categories} {name}";
+        if (Contains(description, "keyboard") || name.Contains("键盘", StringComparison.Ordinal)
+            || StartsWith(name, "MCHOSE K"))
+            return "keyboard";
+        if (Contains(description, "mouse") || name.Contains("鼠标", StringComparison.Ordinal))
+            return "mouse";
+        if (Contains(description, "headset") || Contains(description, "headphone")
+            || Contains(description, "earbuds") || name.Contains("耳机", StringComparison.Ordinal))
+            return "headphones";
+        if (Contains(description, "gamepad") || Contains(description, "gamecontroller")
+            || Contains(description, "controller") || name.Contains("手柄", StringComparison.Ordinal))
+            return "controller";
+        return "other";
+    }
+
+    private static BluetoothNode? ReadBluetoothNode(string id)
+    {
+        if (!Locate(id, out uint node))
+            return null;
+        byte[]? battery = ReadProperty(node, Battery, 1, DevpropByte);
+        return new BluetoothNode(id, ReadContainer(node), ReadText(node, Category),
+            battery is [<= 100] ? battery[0] : null);
+    }
+
+    private static Guid ReadContainer(uint node)
+    {
+        byte[]? container = ReadProperty(node, Container, 16, DevpropGuid);
+        return container is { Length: 16 } ? new Guid(container) : Guid.Empty;
+    }
+
+    private static bool StartsWith(string value, string prefix) =>
+        value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+
+    private static bool Contains(string value, string part) =>
+        value.Contains(part, StringComparison.OrdinalIgnoreCase);
+
+    private static string ReadText(uint node, PropertyKey key)
+    {
+        const uint devpropString = 0x12;
+        const uint devpropStringList = 0x2012;
+        byte[]? result = ReadProperty(node, key, 512, devpropString, devpropStringList);
+        return result is null ? "" : Encoding.Unicode.GetString(result).TrimEnd('\0').Replace('\0', ' ').Trim();
+    }
+
+    private static byte[]? ReadProperty(uint node, PropertyKey key, uint maxSize, uint expectedType, uint alternateType = 0)
+    {
+        byte[] data = new byte[maxSize];
+        uint size = maxSize;
+        uint code = CM_Get_DevNode_PropertyW(node, in key, out uint type, data, ref size, 0);
+        return code == 0 && size <= maxSize && (type == expectedType || type == alternateType)
+            ? data[..(int)size]
+            : null;
+    }
+
+    private static bool Locate(string id, out uint node) => CM_Locate_DevNodeW(out node, id, 0) == 0;
+
+    private static string[] PresentDeviceIds()
+    {
+        const uint filterPresent = 0x100;
+        const uint bufferSmall = 0x1A;
+        // A new PnP node can arrive between the size query and the list query.
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            uint code = CM_Get_Device_ID_List_SizeW(out uint count, null, filterPresent);
+            if (code != 0)
+                throw new InvalidOperationException($"读取设备列表失败（0x{code:X}）。");
+            if (count <= 1)
+                return [];
+
+            char[] buffer = new char[count];
+            code = CM_Get_Device_ID_ListW(null, buffer, count, filterPresent);
+            if (code == 0)
+                return new string(buffer).Split('\0', StringSplitOptions.RemoveEmptyEntries);
+            if (code != bufferSmall)
+                throw new InvalidOperationException($"读取设备列表失败（0x{code:X}）。");
+        }
+        throw new InvalidOperationException("设备列表正在变化，请刷新后重试。");
+    }
+
+    private sealed record BluetoothEndpoint(DeviceInformation Info, bool IsLowEnergy);
+
+    private sealed record BluetoothNode(string Id, Guid ContainerId, string Category, int? Level);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct PropertyKey(string format, uint id)
+    {
+        private readonly Guid formatId = new(format);
+        private readonly uint propertyId = id;
+    }
+
+    [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern uint CM_Get_Device_ID_List_SizeW(out uint length, string? filter, uint flags);
+
+    [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern uint CM_Get_Device_ID_ListW(string? filter, [Out] char[] buffer, uint length, uint flags);
+
+    [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern uint CM_Locate_DevNodeW(out uint node, string id, uint flags);
+
+    [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern uint CM_Get_DevNode_PropertyW(uint node, in PropertyKey key, out uint type,
+        [Out] byte[] buffer, ref uint size, uint flags);
+}
