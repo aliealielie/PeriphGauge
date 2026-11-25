@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using DrawingPoint = System.Drawing.Point;
@@ -298,17 +299,51 @@ public partial class FloatingWindow : Window
     private static DeviceRow ToRow(BatteryDevice device)
     {
         int? value = device.Percent is >= 0 and <= 100 ? device.Percent : null;
-        string batteryLabel = value is int percent ? $"电量 {percent}%" : "电量未知";
+        string batteryLabel = value switch
+        {
+            null => "电量未知",
+            <= 20 => $"低电量 {value}%",
+            _ => $"电量 {value}%"
+        };
         string connection = device.Connection == "2.4G 接收器" ? "2.4G" : device.Connection;
-        return new DeviceRow(device.Name, device.Kind, connection, device.Connection == "蓝牙" ? "#A4C9FA" : "#AAC2BD",
+        return new DeviceRow(device.Name, device.Kind, connection, "#D6D6D6",
             value is int level ? $"{level}%" : "—",
-            value switch { null => "#A9B7BD", <= 20 => "#FFAE99", _ => "#93E9C5" },
-            batteryLabel, $"{device.Name} · {device.Connection} · {batteryLabel}");
+            value.HasValue ? "#FFFFFF" : "#969696",
+            batteryLabel, $"{device.Name} · {device.Connection} · {batteryLabel}",
+            BatteryArc(value), value switch { null => "#777777", <= 20 => "#FF565F", _ => "#62DC86" },
+            value == 0 ? "#7F2C33" : "#353535");
+    }
+
+    private static Geometry BatteryArc(int? value)
+    {
+        const double center = 14;
+        const double radius = 11;
+        if (value is not int percent || percent == 0)
+            return Geometry.Empty;
+
+        if (percent == 100)
+        {
+            var circle = new EllipseGeometry(new Point(center, center), radius, radius);
+            circle.Freeze();
+            return circle;
+        }
+
+        double angle = percent / 100d * Math.Tau;
+        var end = new Point(center + radius * Math.Sin(angle), center - radius * Math.Cos(angle));
+        var arc = new StreamGeometry();
+        using (var path = arc.Open())
+        {
+            path.BeginFigure(new Point(center, center - radius), isFilled: false, isClosed: false);
+            path.ArcTo(end, new Size(radius, radius), rotationAngle: 0,
+                isLargeArc: percent > 50, SweepDirection.Clockwise, isStroked: true, isSmoothJoin: false);
+        }
+        arc.Freeze();
+        return arc;
     }
 
     private sealed record DeviceRow(
         string Name, string Kind, string Connection, string ConnectionTone, string Battery, string BatteryTone,
-        string BatteryLabel, string Description);
+        string BatteryLabel, string Description, Geometry RingArc, string RingTone, string RingTrack);
 
     private sealed record PointerPress(UIElement Handle, DrawingPoint Cursor, DrawingPoint WindowOrigin);
 
