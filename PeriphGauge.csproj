@@ -12,6 +12,7 @@
     <Title>外设电量</Title>
     <Product>外设电量</Product>
     <Description>Windows 无线外设电量托盘</Description>
+    <Copyright>Copyright © 2026 PeriphGauge contributors</Copyright>
     <Version>1.0.0</Version>
   </PropertyGroup>
   <ItemGroup>
