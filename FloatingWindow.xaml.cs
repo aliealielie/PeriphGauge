@@ -18,7 +18,7 @@ namespace WirelessBattery;
 public partial class FloatingWindow : Window
 {
     private const double CompactWidth = 192;
-    private const double CompactHeight = 56;
+    private const double CompactHeight = 68;
     private const double ExpandedWidth = 271;
 
     private DrawingPoint? preferredLocation;
@@ -27,6 +27,7 @@ public partial class FloatingWindow : Window
     private bool dragging;
 
     internal event EventHandler? HideRequested;
+    internal event EventHandler<bool>? ExpansionChangedByUser;
     internal event EventHandler<DrawingPoint>? PositionChangedByDrag;
     internal bool AllowClose { get; set; }
 
@@ -38,7 +39,8 @@ public partial class FloatingWindow : Window
 
     internal void SetDevices(IReadOnlyList<BatteryDevice> devices)
     {
-        var rows = devices.Select(ToRow).ToArray();
+        var rows = devices.Select((device, index) => ToRow(device, index > 0)).ToArray();
+        DeviceCount.Text = $"{rows.Length} 台";
         DeviceItems.ItemsSource = rows;
         CompactItems.ItemsSource = rows
             .OrderBy(row => row.Kind switch { "keyboard" => 0, "mouse" => 1, _ => 2 })
@@ -53,6 +55,7 @@ public partial class FloatingWindow : Window
 
     internal void SetError()
     {
+        DeviceCount.Text = string.Empty;
         DeviceItems.ItemsSource = null;
         CompactItems.ItemsSource = null;
         DeviceScroll.Visibility = Visibility.Collapsed;
@@ -62,38 +65,43 @@ public partial class FloatingWindow : Window
         CompactStatus.Visibility = Visibility.Visible;
     }
 
-    internal void OpenAt(DrawingPoint? location)
+    internal void OpenAt(DrawingPoint? location, bool expanded = false)
     {
         preferredLocation = location;
-        if (!IsVisible)
+        SetExpanded(expanded, animate: false);
+        if (WindowState == WindowState.Minimized)
+            WindowState = WindowState.Normal;
+
+        bool showing = !IsVisible;
+        if (showing)
         {
-            SetExpanded(false, animate: false);
             Opacity = 0;
             Show();
-            UpdateLayout();
-            PositionOnScreen();
+        }
+
+        UpdateLayout();
+        PositionOnScreen();
+        if (showing)
             Opacity = 1;
-        }
-        else
-        {
-            PositionOnScreen();
-        }
+    }
+
+    protected override void OnContentRendered(EventArgs e)
+    {
+        base.OnContentRendered(e);
+        PositionOnScreen();
     }
 
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
         var source = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
-        source?.AddHook(HandleMonitorChange);
+        source?.AddHook(HandleWindowMessage);
     }
 
     protected override void OnClosing(CancelEventArgs e)
     {
         if (!AllowClose)
-        {
             e.Cancel = true;
-            HideRequested?.Invoke(this, EventArgs.Empty);
-        }
         base.OnClosing(e);
     }
 
@@ -103,7 +111,7 @@ public partial class FloatingWindow : Window
         {
             e.Handled = true;
             if (isExpanded)
-                SetExpanded(false);
+                SetExpandedByUser(false);
             else
                 HideRequested?.Invoke(this, EventArgs.Empty);
         }
@@ -112,14 +120,20 @@ public partial class FloatingWindow : Window
 
     private void HideClick(object sender, RoutedEventArgs e) => HideRequested?.Invoke(this, EventArgs.Empty);
 
-    private void ExpandClick(object sender, RoutedEventArgs e) => SetExpanded(true);
+    private void ExpandClick(object sender, RoutedEventArgs e) => SetExpandedByUser(true);
 
-    private void CollapseClick(object sender, RoutedEventArgs e) => SetExpanded(false);
+    private void CollapseClick(object sender, RoutedEventArgs e) => SetExpandedByUser(false);
 
-    private void SetExpanded(bool expanded, bool animate = true)
+    private void SetExpandedByUser(bool expanded)
+    {
+        if (SetExpanded(expanded))
+            ExpansionChangedByUser?.Invoke(this, expanded);
+    }
+
+    private bool SetExpanded(bool expanded, bool animate = true)
     {
         if (expanded == isExpanded)
-            return;
+            return false;
 
         double currentWidth = ActualWidth;
         isExpanded = expanded;
@@ -149,6 +163,7 @@ public partial class FloatingWindow : Window
 
         if (IsActive)
             (expanded ? (FrameworkElement)CollapseButton : CompactView).Focus();
+        return true;
     }
 
     private void CompactMouseDown(object sender, MouseButtonEventArgs e) => StartPointerPress(CompactView, e);
@@ -214,7 +229,7 @@ public partial class FloatingWindow : Window
             && new Rect(CompactView.RenderSize).Contains(e.GetPosition(CompactView));
         EndPointerPress();
         if (expand)
-            SetExpanded(true);
+            SetExpandedByUser(true);
         e.Handled = true;
     }
 
@@ -257,13 +272,23 @@ public partial class FloatingWindow : Window
         }
     }
 
-    private IntPtr HandleMonitorChange(IntPtr window, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
+    private IntPtr HandleWindowMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         const int displayChanged = 0x007E;
         const int settingChanged = 0x001A;
         const int setWorkArea = 0x002F;
-        if (message == displayChanged || (message == settingChanged && wParam == setWorkArea))
+        const int systemCommand = 0x0112;
+        const int systemClose = 0xF060;
+        if (message == systemCommand && (wParam.ToInt64() & 0xFFF0) == systemClose && !AllowClose)
+        {
+            handled = true;
+            HideRequested?.Invoke(this, EventArgs.Empty);
+        }
+        else if (message == displayChanged || (message == settingChanged && wParam == setWorkArea))
+        {
             Dispatcher.InvokeAsync(() => PositionOnScreen(), DispatcherPriority.Loaded);
+        }
+
         return IntPtr.Zero;
     }
 
@@ -296,53 +321,26 @@ public partial class FloatingWindow : Window
         }
     }
 
-    private static DeviceRow ToRow(BatteryDevice device)
+    private static DeviceRow ToRow(BatteryDevice device, bool hasDivider)
     {
         int? value = device.Percent is >= 0 and <= 100 ? device.Percent : null;
         string batteryLabel = value switch
         {
             null => "电量未知",
-            <= 20 => $"低电量 {value}%",
+            <= BatteryRingVisual.LowThreshold => $"低电量 {value}%",
             _ => $"电量 {value}%"
         };
-        string connection = device.Connection == "2.4G 接收器" ? "2.4G" : device.Connection;
-        return new DeviceRow(device.Name, device.Kind, connection, "#D6D6D6",
+        string connection = device.Connection == "2.4G 接收器" ? "2.4 GHz 接收器" : device.Connection;
+        var (ringArc, ringTone, ringTrack) = BatteryRingVisual.Create(value);
+        return new DeviceRow(device.Name, device.Kind, connection, hasDivider,
             value is int level ? $"{level}%" : "—",
             value.HasValue ? "#FFFFFF" : "#969696",
-            batteryLabel, $"{device.Name} · {device.Connection} · {batteryLabel}",
-            BatteryArc(value), value switch { null => "#777777", <= 20 => "#FF565F", _ => "#62DC86" },
-            value == 0 ? "#7F2C33" : "#353535");
-    }
-
-    private static Geometry BatteryArc(int? value)
-    {
-        const double center = 14;
-        const double radius = 11;
-        if (value is not int percent || percent == 0)
-            return Geometry.Empty;
-
-        if (percent == 100)
-        {
-            var circle = new EllipseGeometry(new Point(center, center), radius, radius);
-            circle.Freeze();
-            return circle;
-        }
-
-        double angle = percent / 100d * Math.Tau;
-        var end = new Point(center + radius * Math.Sin(angle), center - radius * Math.Cos(angle));
-        var arc = new StreamGeometry();
-        using (var path = arc.Open())
-        {
-            path.BeginFigure(new Point(center, center - radius), isFilled: false, isClosed: false);
-            path.ArcTo(end, new Size(radius, radius), rotationAngle: 0,
-                isLargeArc: percent > 50, SweepDirection.Clockwise, isStroked: true, isSmoothJoin: false);
-        }
-        arc.Freeze();
-        return arc;
+            batteryLabel, $"{device.Name} · {connection} · {batteryLabel}",
+            ringArc, ringTone, ringTrack);
     }
 
     private sealed record DeviceRow(
-        string Name, string Kind, string Connection, string ConnectionTone, string Battery, string BatteryTone,
+        string Name, string Kind, string Connection, bool HasDivider, string Battery, string BatteryTone,
         string BatteryLabel, string Description, Geometry RingArc, string RingTone, string RingTrack);
 
     private sealed record PointerPress(UIElement Handle, DrawingPoint Cursor, DrawingPoint WindowOrigin);

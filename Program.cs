@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
+using Microsoft.Win32;
 using DrawingPoint = System.Drawing.Point;
 
 namespace WirelessBattery;
@@ -77,29 +78,47 @@ internal static class Program
         var widget = new FloatingWindow();
         using var tray = new BatteryTray();
         bool widgetVisible = false;
+        bool widgetTopmost = true;
+        bool widgetExpanded = false;
         bool startsWithWindows = false;
         DrawingPoint? widgetPosition = null;
-        ApplyOption(() => (widgetVisible, widgetPosition) = WidgetSettings.Load(), "无法读取悬浮窗设置", showDialog: false);
+        ApplyOption(() => (widgetVisible, widgetPosition, widgetTopmost, widgetExpanded) = WidgetSettings.Load(),
+            "无法读取悬浮窗设置", showDialog: false);
+        widget.Topmost = widgetTopmost;
         ApplyOption(() => startsWithWindows = DesktopIntegration.StartsWithWindows, "无法读取自启动状态", showDialog: false);
 
         void ShowOptionState()
         {
-            window.SetOptions(widgetVisible, startsWithWindows);
-            tray.SetOptions(widgetVisible, startsWithWindows);
+            window.SetOptions(widgetVisible, startsWithWindows, widgetTopmost);
+            tray.SetOptions(widgetVisible, startsWithWindows, widgetTopmost);
+        }
+
+        void RestoreWidget()
+        {
+            if (widgetVisible)
+                widget.OpenAt(widgetPosition, widgetExpanded);
         }
 
         void SetWidgetVisibility(bool visible)
         {
-            if (visible)
-                widget.OpenAt(widgetPosition);
-            else
-                widget.Hide();
-            widgetVisible = visible;
+            if (ApplyOption(() => WidgetSettings.SetVisible(visible), "无法保存悬浮窗设置"))
+            {
+                widgetVisible = visible;
+                if (visible)
+                    RestoreWidget();
+                else
+                    widget.Hide();
+            }
             ShowOptionState();
-            ApplyOption(() => WidgetSettings.SetVisible(visible), "无法保存悬浮窗设置");
         }
 
         void ToggleWidget(object? sender, EventArgs args) => SetWidgetVisibility(!widgetVisible);
+        void ToggleTopmost(object? sender, EventArgs args)
+        {
+            if (ApplyOption(() => WidgetSettings.SetTopmost(!widgetTopmost), "无法保存悬浮窗置顶设置"))
+                widget.Topmost = widgetTopmost = !widgetTopmost;
+            ShowOptionState();
+        }
         void ToggleStartup(object? sender, EventArgs args)
         {
             if (ApplyOption(() => DesktopIntegration.SetStartsWithWindows(!startsWithWindows), "无法修改开机自启动"))
@@ -119,11 +138,18 @@ internal static class Program
 
         window.WidgetToggleRequested += ToggleWidget;
         tray.WidgetToggleRequested += ToggleWidget;
+        window.TopmostToggleRequested += ToggleTopmost;
+        tray.TopmostToggleRequested += ToggleTopmost;
         window.StartupToggleRequested += ToggleStartup;
         tray.StartupToggleRequested += ToggleStartup;
         window.DesktopShortcutRequested += CreateShortcut;
         tray.DesktopShortcutRequested += CreateShortcut;
         widget.HideRequested += (_, _) => SetWidgetVisibility(false);
+        widget.ExpansionChangedByUser += (_, expanded) =>
+        {
+            widgetExpanded = expanded;
+            ApplyOption(() => WidgetSettings.SetExpanded(expanded), "无法保存悬浮窗展开状态");
+        };
         widget.PositionChangedByDrag += (_, position) =>
         {
             widgetPosition = position;
@@ -137,17 +163,16 @@ internal static class Program
             AllowWindowClose();
             app.Shutdown();
         };
-        app.SessionEnding += (_, _) => AllowWindowClose();
 
         bool reading = false;
         async Task RefreshAsync(bool showScanning)
         {
+            if (showScanning)
+                window.SetScanning();
             if (reading)
                 return;
 
             reading = true;
-            if (showScanning)
-                window.SetScanning();
             try
             {
                 List<BatteryDevice> devices = await Task.Run(BatteryReader.Read);
@@ -180,14 +205,32 @@ internal static class Program
         timer.Tick += async (_, _) => await RefreshAsync(false);
         timer.Start();
 
+        void QueueRestore() => app.Dispatcher.InvokeAsync(RestoreWidget, DispatcherPriority.ContextIdle);
+        void SessionChanged(object sender, SessionSwitchEventArgs e)
+        {
+            if (e.Reason is SessionSwitchReason.SessionUnlock or SessionSwitchReason.ConsoleConnect
+                or SessionSwitchReason.RemoteConnect)
+                QueueRestore();
+        }
+        void PowerChanged(object sender, PowerModeChangedEventArgs e)
+        {
+            if (e.Mode == PowerModes.Resume)
+                QueueRestore();
+        }
+        SystemEvents.SessionSwitch += SessionChanged;
+        SystemEvents.PowerModeChanged += PowerChanged;
         var openListener = ThreadPool.RegisterWaitForSingleObject(openRequest, (_, _) =>
-            app.Dispatcher.InvokeAsync(() => window.OpenNear()), null, Timeout.Infinite, false);
-        if (widgetVisible)
-            widget.OpenAt(widgetPosition);
-        if (!fromStartup)
-            window.OpenNear();
-        app.Dispatcher.InvokeAsync(() => RefreshAsync(true));
+            app.Dispatcher.InvokeAsync(() => { RestoreWidget(); window.OpenNear(); }), null, Timeout.Infinite, false);
+        app.Startup += (_, _) =>
+        {
+            RestoreWidget();
+            if (!fromStartup)
+                window.OpenNear();
+            app.Dispatcher.InvokeAsync(() => RefreshAsync(true));
+        };
         int exitCode = app.Run();
+        SystemEvents.SessionSwitch -= SessionChanged;
+        SystemEvents.PowerModeChanged -= PowerChanged;
         timer.Stop();
         openListener.Unregister(null);
         return exitCode;

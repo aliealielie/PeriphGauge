@@ -5,157 +5,131 @@
         WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="True"
         Background="Transparent" ShowInTaskbar="False" Topmost="True"
         WindowStartupLocation="Manual" UseLayoutRounding="True"
-        FontFamily="Segoe UI, Microsoft YaHei UI" Foreground="#F1F6F5"
+        FontFamily="Segoe UI, Microsoft YaHei UI" Foreground="#FFFFFF"
         KeyboardNavigation.TabNavigation="Cycle">
     <Window.Resources>
-        <SolidColorBrush x:Key="MutedText" Color="#A9B7BD" />
-        <SolidColorBrush x:Key="Mint" Color="#93E9C5" />
-        <Style x:Key="IconButton" TargetType="Button">
-            <Setter Property="Width" Value="32" />
-            <Setter Property="Height" Value="32" />
-            <Setter Property="Foreground" Value="#B5C3C8" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="9">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#26363B" />
-                                <Setter Property="Foreground" Value="#F1F6F5" />
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter Property="Background" Value="#32474A" />
-                            </Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter Property="BorderBrush" Value="{StaticResource Mint}" />
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.45" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <Style x:Key="OptionsMenuItem" TargetType="MenuItem">
-            <Setter Property="Foreground" Value="#F1F6F5" />
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="MenuItem">
-                        <Border x:Name="ItemBackground" Background="Transparent" CornerRadius="6" Padding="8,7,12,7">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="18" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <Path x:Name="Checkmark" Data="M 1,5 L 4,8 L 9,2" Stroke="{StaticResource Mint}"
-                                      StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                                      VerticalAlignment="Center" Visibility="Hidden" />
-                                <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True"
-                                                  VerticalAlignment="Center" />
-                            </Grid>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsHighlighted" Value="True">
-                                <Setter TargetName="ItemBackground" Property="Background" Value="#2B3B41" />
-                            </Trigger>
-                            <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Checkmark" Property="Visibility" Value="Visible" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <Style x:Key="BatteryBar" TargetType="ProgressBar">
-            <Setter Property="Height" Value="4" />
-            <Setter Property="Background" Value="#344148" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ProgressBar">
-                        <Grid ClipToBounds="True">
-                            <Border x:Name="PART_Track" Background="{TemplateBinding Background}" CornerRadius="2" />
-                            <Border x:Name="PART_Indicator" Background="{TemplateBinding Foreground}"
-                                    CornerRadius="2" HorizontalAlignment="Left" />
-                        </Grid>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <DataTemplate x:Key="BatteryRow">
-            <Border Background="#20292F" BorderBrush="#303D43" BorderThickness="1"
-                    CornerRadius="14" Padding="12,11" Margin="0,0,0,8">
-                <Grid>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="DeviceVisuals.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <SolidColorBrush x:Key="MutedText" Color="#ADADAD" />
+            <SolidColorBrush x:Key="PanelHighlight" Color="#FFFFFF" />
+            <Style x:Key="IconButton" TargetType="Button">
+                <Setter Property="Width" Value="32" />
+                <Setter Property="Height" Value="32" />
+                <Setter Property="Foreground" Value="#D0D0D0" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderBrush" Value="Transparent" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="9">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#252525" />
+                                    <Setter Property="Foreground" Value="#FFFFFF" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter Property="Background" Value="#3E3E3E" />
+                                </Trigger>
+                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                    <Setter Property="BorderBrush" Value="{StaticResource PanelHighlight}" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Opacity" Value="0.45" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+            <Style x:Key="OptionsMenuItem" TargetType="MenuItem">
+                <Setter Property="Foreground" Value="#FFFFFF" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="MenuItem">
+                            <Border x:Name="ItemBackground" Background="Transparent" CornerRadius="6" Padding="8,7,12,7">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="18" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Path x:Name="Checkmark" Data="M 1,5 L 4,8 L 9,2" Stroke="{StaticResource PanelHighlight}"
+                                          StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                          VerticalAlignment="Center" Visibility="Hidden" />
+                                    <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True"
+                                                      VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsHighlighted" Value="True">
+                                    <Setter TargetName="ItemBackground" Property="Background" Value="#282828" />
+                                </Trigger>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="Checkmark" Property="Visibility" Value="Visible" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+            <DataTemplate x:Key="BatteryRow">
+                <Grid MinHeight="64" Margin="12,0">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="38" />
+                        <ColumnDefinition Width="44" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <Border Width="38" Height="38" Background="#2B393F" CornerRadius="10">
-                        <Path Data="{Binding Icon}" Width="21" Height="21" Stretch="Uniform"
-                              Stroke="#C6D9D6" StrokeThickness="1.45" StrokeLineJoin="Round"
-                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                    <Border x:Name="RowDivider" Grid.ColumnSpan="3" Height="1" Background="#343434" VerticalAlignment="Top">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource PreviousData}}" Value="{x:Null}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
                     </Border>
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="11,0,10,0">
+                    <ContentControl Template="{StaticResource DeviceRing}" Focusable="False"
+                                    Width="44" Height="44" HorizontalAlignment="Left" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,10,0">
                         <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold"
                                    TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}" />
                         <TextBlock Text="{Binding Detail}" Foreground="{StaticResource MutedText}" FontSize="11"
-                                   Margin="0,3,0,0" TextTrimming="CharacterEllipsis" ToolTip="{Binding Detail}" />
+                                   Margin="0,4,0,0" TextTrimming="CharacterEllipsis" ToolTip="{Binding Detail}" />
                     </StackPanel>
-                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"
-                                AutomationProperties.Name="{Binding BatteryLabel}">
-                        <TextBlock Text="{Binding Number}" Foreground="{Binding Tone}" FontSize="26"
-                                   FontWeight="SemiBold" VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding Unit}" Foreground="{Binding Tone}" FontSize="13"
-                                   FontWeight="SemiBold" VerticalAlignment="Center" Margin="2,4,0,0" />
-                    </StackPanel>
-                    <ProgressBar x:Name="Meter" Grid.Row="1" Grid.ColumnSpan="3" Margin="0,9,0,0"
-                                 Value="{Binding Value, Mode=OneWay}" Maximum="100" Foreground="{Binding Tone}"
-                                 Style="{StaticResource BatteryBar}" AutomationProperties.Name="{Binding BatteryLabel}" />
+                    <TextBlock Grid.Column="2" Text="{Binding Battery}" Foreground="{Binding BatteryTone}" FontSize="23"
+                               FontWeight="SemiBold" VerticalAlignment="Center"
+                               AutomationProperties.Name="{Binding BatteryLabel}" />
                 </Grid>
-            </Border>
-            <DataTemplate.Triggers>
-                <DataTrigger Binding="{Binding HasBattery}" Value="False">
-                    <Setter TargetName="Meter" Property="Visibility" Value="Collapsed" />
-                </DataTrigger>
-            </DataTemplate.Triggers>
-        </DataTemplate>
-        <DataTemplate x:Key="ConnectionGroup">
-            <StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="2,2,0,8">
-                    <Path Data="{Binding Icon}" Width="14" Height="14" Stretch="Uniform"
-                          Stroke="{Binding Tone}" StrokeThickness="1.35" StrokeLineJoin="Round"
-                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" VerticalAlignment="Center" />
-                    <TextBlock Text="{Binding Name}" Foreground="{Binding Tone}" FontSize="12"
-                               FontWeight="SemiBold" Margin="7,0,0,0" VerticalAlignment="Center"
-                               AutomationProperties.HeadingLevel="Level2" />
+            </DataTemplate>
+            <DataTemplate x:Key="ConnectionGroup">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="3,2,0,8">
+                        <Path Data="{Binding Icon}" Width="14" Height="14" Stretch="Uniform"
+                              Stroke="#E8E8E8" StrokeThickness="1.5" StrokeLineJoin="Round"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding Name}" Foreground="#F0F0F0" FontSize="13"
+                                   FontWeight="SemiBold" Margin="7,0,0,0" VerticalAlignment="Center"
+                                   AutomationProperties.HeadingLevel="Level2" />
+                    </StackPanel>
+                    <Border Background="#232323" CornerRadius="12" Margin="0,0,0,12">
+                        <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource BatteryRow}" />
+                    </Border>
                 </StackPanel>
-                <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource BatteryRow}" />
-            </StackPanel>
-        </DataTemplate>
+            </DataTemplate>
+        </ResourceDictionary>
     </Window.Resources>
-    <Border Margin="12" BorderBrush="#39464B" BorderThickness="1" CornerRadius="22">
-        <Border.Background>
-            <LinearGradientBrush StartPoint="0,0" EndPoint="0.25,1">
-                <GradientStop Offset="0" Color="#1D292D" />
-                <GradientStop Offset="0.46" Color="#161E23" />
-                <GradientStop Offset="1" Color="#151D22" />
-            </LinearGradientBrush>
-        </Border.Background>
+    <Border Margin="12" Background="#111111" BorderBrush="#2A2A2A" BorderThickness="1" CornerRadius="20">
         <Border.Effect>
-            <DropShadowEffect Color="#071011" BlurRadius="19" ShadowDepth="3" Opacity="0.62" />
+            <DropShadowEffect Color="#000000" BlurRadius="19" ShadowDepth="3" Opacity="0.62" />
         </Border.Effect>
         <Grid>
             <Grid.RowDefinitions>
@@ -171,17 +145,9 @@
                     <ColumnDefinition Width="32" />
                     <ColumnDefinition Width="32" />
                 </Grid.ColumnDefinitions>
-                <Border Width="43" Height="43" CornerRadius="13">
-                    <Border.Background>
-                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                            <GradientStop Offset="0" Color="#B0F5D7" />
-                            <GradientStop Offset="1" Color="#73DDB4" />
-                        </LinearGradientBrush>
-                    </Border.Background>
-                    <Path Data="M 2,7 Q 2,5 4,5 L 17,5 Q 19,5 19,7 L 19,15 Q 19,17 17,17 L 4,17 Q 2,17 2,15 Z M 21,9 L 21,13 M 11,7.5 L 8,11 L 12,11 L 10,14.5"
-                          Stroke="#15342B" StrokeThickness="1.55" StrokeLineJoin="Round"
-                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                          Stretch="None" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <Border Width="43" Height="43" Background="#292929" CornerRadius="13">
+                    <Path Data="M 8,1 L 2,8 L 7,8 L 5,14 L 12,6 L 7,6 Z" Fill="{StaticResource PanelHighlight}"
+                          Width="20" Height="24" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
                 <StackPanel Grid.Column="1" Margin="12,0,5,0" VerticalAlignment="Center">
                     <TextBlock Text="外设电量" FontSize="20" FontWeight="SemiBold" />
@@ -203,7 +169,7 @@
                                      AutomationProperties.Name="更多选项">
                             <ContextMenu.Template>
                                 <ControlTemplate TargetType="ContextMenu">
-                                    <Border Background="#202C32" BorderBrush="#405057" BorderThickness="1"
+                                    <Border Background="#191919" BorderBrush="#454545" BorderThickness="1"
                                             CornerRadius="11" Padding="5" MinWidth="160">
                                         <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle" />
                                     </Border>
@@ -211,6 +177,8 @@
                             </ContextMenu.Template>
                             <MenuItem x:Name="WidgetOption" Header="显示桌面悬浮窗" IsCheckable="True"
                                       Style="{StaticResource OptionsMenuItem}" Checked="WidgetChanged" Unchecked="WidgetChanged" />
+                            <MenuItem x:Name="TopmostOption" Header="悬浮窗置顶" IsCheckable="True"
+                                      Style="{StaticResource OptionsMenuItem}" Checked="TopmostChanged" Unchecked="TopmostChanged" />
                             <MenuItem x:Name="StartupOption" Header="开机自启动" IsCheckable="True"
                                       Style="{StaticResource OptionsMenuItem}" Checked="StartupChanged" Unchecked="StartupChanged" />
                             <MenuItem Header="创建桌面快捷方式" Style="{StaticResource OptionsMenuItem}"
@@ -231,9 +199,12 @@
                 <ScrollViewer x:Name="DeviceScroll" MaxHeight="375" VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled" Visibility="Collapsed"
                               AutomationProperties.Name="无线设备列表">
+                    <ScrollViewer.Resources>
+                        <Style TargetType="ScrollBar" BasedOn="{StaticResource DeviceScrollBar}" />
+                    </ScrollViewer.Resources>
                     <ItemsControl x:Name="DeviceItems" ItemTemplate="{StaticResource ConnectionGroup}" />
                 </ScrollViewer>
-                <Border x:Name="Placeholder" BorderBrush="#34434A" BorderThickness="1" Background="#20292F"
+                <Border x:Name="Placeholder" BorderBrush="#2F2F2F" BorderThickness="1" Background="#171717"
                         CornerRadius="14" Padding="14,15" Margin="0,0,0,8" MinHeight="78">
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock x:Name="PlaceholderTitle" Text="正在读取电量" FontSize="14" FontWeight="SemiBold" />
@@ -248,7 +219,7 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Ellipse Width="6" Height="6" Fill="{StaticResource Mint}" VerticalAlignment="Center" />
+                    <Ellipse Width="6" Height="6" Fill="#BFBFBF" VerticalAlignment="Center" />
                     <TextBlock x:Name="ModeText" Text="自动刷新" Foreground="{StaticResource MutedText}"
                                FontSize="11" Margin="6,0,0,0" />
                 </StackPanel>

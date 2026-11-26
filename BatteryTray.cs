@@ -5,7 +5,6 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using System.Linq;
 using System.Runtime.InteropServices;
-using Application = System.Windows.Application;
 using Forms = System.Windows.Forms;
 
 namespace WirelessBattery;
@@ -16,6 +15,7 @@ internal sealed class BatteryTray : IDisposable
     private readonly Forms.NotifyIcon notifyIcon;
     private readonly Forms.ContextMenuStrip menu;
     private readonly Forms.ToolStripMenuItem widgetItem;
+    private readonly Forms.ToolStripMenuItem topmostItem;
     private readonly Forms.ToolStripMenuItem startupItem;
     private readonly Icon baseIcon;
     private Icon? batteryIcon;
@@ -24,24 +24,40 @@ internal sealed class BatteryTray : IDisposable
     internal event EventHandler<Point?>? OpenRequested;
     internal event EventHandler? RefreshRequested;
     internal event EventHandler? WidgetToggleRequested;
+    internal event EventHandler? TopmostToggleRequested;
     internal event EventHandler? StartupToggleRequested;
     internal event EventHandler? DesktopShortcutRequested;
     internal event EventHandler? ExitRequested;
 
     internal BatteryTray()
     {
-        using var iconStream = Application.GetResourceStream(
-            new Uri("pack://application:,,,/App.ico")).Stream;
-        baseIcon = new Icon(iconStream);
-        menu = new Forms.ContextMenuStrip();
+        baseIcon = DrawBatteryIcon(null);
+        var darkRenderer = new TrayMenuRenderer();
+        menu = new Forms.ContextMenuStrip { ShowImageMargin = false, ShowCheckMargin = true };
+        menu.Opening += (_, _) =>
+        {
+            if (Forms.SystemInformation.HighContrast)
+            {
+                menu.RenderMode = Forms.ToolStripRenderMode.System;
+                menu.ForeColor = SystemColors.MenuText;
+            }
+            else
+            {
+                menu.Renderer = darkRenderer;
+                menu.ForeColor = Color.White;
+            }
+        };
         menu.Items.Add("打开电量面板", null, (_, _) => OpenRequested?.Invoke(this, null));
         menu.Items.Add("立即刷新", null, (_, _) => RefreshRequested?.Invoke(this, EventArgs.Empty));
         menu.Items.Add(new Forms.ToolStripSeparator());
         widgetItem = new Forms.ToolStripMenuItem("显示桌面悬浮窗");
         widgetItem.Click += (_, _) => WidgetToggleRequested?.Invoke(this, EventArgs.Empty);
+        topmostItem = new Forms.ToolStripMenuItem("悬浮窗置顶");
+        topmostItem.Click += (_, _) => TopmostToggleRequested?.Invoke(this, EventArgs.Empty);
         startupItem = new Forms.ToolStripMenuItem("开机自启动");
         startupItem.Click += (_, _) => StartupToggleRequested?.Invoke(this, EventArgs.Empty);
         menu.Items.Add(widgetItem);
+        menu.Items.Add(topmostItem);
         menu.Items.Add(startupItem);
         menu.Items.Add("创建桌面快捷方式", null, (_, _) => DesktopShortcutRequested?.Invoke(this, EventArgs.Empty));
         menu.Items.Add(new Forms.ToolStripSeparator());
@@ -60,34 +76,46 @@ internal sealed class BatteryTray : IDisposable
         };
     }
 
-    internal void SetOptions(bool widgetVisible, bool startsWithWindows)
+    internal void SetOptions(bool widgetVisible, bool startsWithWindows, bool widgetTopmost)
     {
         widgetItem.Checked = widgetVisible;
+        topmostItem.Checked = widgetTopmost;
         startupItem.Checked = startsWithWindows;
     }
 
     internal void Update(IReadOnlyList<BatteryDevice> devices)
     {
-        var measured = devices.Where(device => device.Percent is >= 0 and <= 100)
-            .OrderBy(device => device.Percent).ToArray();
-        SetPercent(measured.FirstOrDefault()?.Percent);
+        var ordered = devices.OrderBy(device => ValidPercent(device) ?? 101).ToArray();
+        int? lowest = ordered.Length > 0 ? ValidPercent(ordered[0]) : null;
+        SetPercent(lowest);
 
-        string tooltip = measured.Length > 0 ? "外设电量 · 最低 " + displayedPercent + "%" : Program.Name;
+        string tooltip = lowest is int level ? $"外设电量 · 最低 {level}%" : Program.Name;
         if (devices.Count == 0)
             tooltip += "\n暂无已连接的无线设备";
 
-        foreach (var device in measured.Concat(devices.Where(device => device.Percent is null)))
+        for (int i = 0; i < ordered.Length; i++)
         {
+            var device = ordered[i];
             string connection = device.Connection == "2.4G 接收器" ? "2.4G" : device.Connection;
-            string name = device.Name.Length > 35 ? device.Name[..34] + "…" : device.Name;
-            string suffix = device.Percent is int percent ? percent + "%" : "电量未知";
+            string name = device.Name.Replace('\r', ' ').Replace('\n', ' ');
+            if (name.Length > 35)
+                name = name[..(char.IsHighSurrogate(name[33]) ? 33 : 34)] + "…";
+            string suffix = ValidPercent(device) is int percent ? $"{percent}%" : "未上报电量";
             string line = $"\n{name} · {connection} · {suffix}";
-            if (tooltip.Length + line.Length > MaxTooltipLength)
+            int skipped = ordered.Length - i;
+            string remaining = $"\n另有 {skipped} 台设备";
+            int reserve = skipped > 1 ? remaining.Length : 0;
+            if (tooltip.Length + line.Length + reserve > MaxTooltipLength)
+            {
+                tooltip += remaining;
                 break;
+            }
             tooltip += line;
         }
         notifyIcon.Text = tooltip;
     }
+
+    private static int? ValidPercent(BatteryDevice device) => device.Percent is >= 0 and <= 100 ? device.Percent : null;
 
     internal void ShowError()
     {
@@ -107,7 +135,7 @@ internal sealed class BatteryTray : IDisposable
         oldIcon?.Dispose();
     }
 
-    private static Icon DrawBatteryIcon(int level)
+    private static Icon DrawBatteryIcon(int? level)
     {
         // Render oversize so Windows can scale the same icon for different tray DPIs.
         using var bitmap = new Bitmap(48, 48);
@@ -117,10 +145,9 @@ internal sealed class BatteryTray : IDisposable
             graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
             graphics.Clear(Color.Transparent);
 
-            Color accent = level <= 20 ? Color.FromArgb(255, 179, 149) : Color.FromArgb(155, 247, 207);
-            using var outline = new Pen(Color.FromArgb(45, 70, 69), 1.4f);
-            using var background = new SolidBrush(Color.FromArgb(255, 16, 28, 35));
-            using var foreground = new SolidBrush(accent);
+            using var outline = new Pen(Color.FromArgb(86, 86, 86), 1.5f);
+            using var background = new SolidBrush(Color.FromArgb(13, 13, 13));
+            using var foreground = new SolidBrush(level.HasValue ? Color.White : Color.FromArgb(192, 192, 192));
             using var badge = new GraphicsPath();
             badge.AddArc(1, 1, 19, 19, 180, 90);
             badge.AddArc(28, 1, 19, 19, 270, 90);
@@ -129,12 +156,22 @@ internal sealed class BatteryTray : IDisposable
             badge.CloseFigure();
             graphics.FillPath(background, badge);
             graphics.DrawPath(outline, badge);
-            using var font = new Font("Segoe UI", level == 100 ? 23 : 31, System.Drawing.FontStyle.Bold, GraphicsUnit.Pixel);
-            using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-            graphics.DrawString(level.ToString(), font, foreground, new RectangleF(0, 1, 47, 38), format);
-            using var track = new SolidBrush(Color.FromArgb(49, 135, 151, 143));
-            graphics.FillRectangle(track, 11, 39, 26, 3);
-            graphics.FillRectangle(foreground, 11, 39, 26 * level / 100f, 3);
+            using var font = new Font("Segoe UI", level switch { 100 => 22, >= 10 => 29, _ => 32 },
+                FontStyle.Bold, GraphicsUnit.Pixel);
+            using var format = new StringFormat(StringFormat.GenericTypographic)
+            {
+                Alignment = StringAlignment.Center,
+                LineAlignment = StringAlignment.Center,
+                FormatFlags = StringFormatFlags.NoWrap
+            };
+            graphics.DrawString(level?.ToString() ?? "—", font, foreground, new RectangleF(1, 0, 46, 38), format);
+            if (level is int percent)
+            {
+                Color accent = ColorTranslator.FromHtml(percent <= BatteryRingVisual.LowThreshold
+                    ? BatteryRingVisual.Red : BatteryRingVisual.Green);
+                using var status = new Pen(accent, 4) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+                graphics.DrawLine(status, 16, 40, 32, 40);
+            }
         }
 
         IntPtr handle = bitmap.GetHicon();
@@ -156,6 +193,43 @@ internal sealed class BatteryTray : IDisposable
         menu.Dispose();
         batteryIcon?.Dispose();
         baseIcon.Dispose();
+    }
+
+    private sealed class TrayMenuRenderer() : Forms.ToolStripProfessionalRenderer(new TrayMenuColors())
+    {
+        protected override void OnRenderItemCheck(Forms.ToolStripItemImageRenderEventArgs e)
+        {
+            Rectangle box = e.ImageRectangle;
+            float scale = box.Width / 16f;
+            using var check = new Pen(Color.White, 1.6f * scale)
+            {
+                StartCap = LineCap.Round,
+                EndCap = LineCap.Round,
+                LineJoin = LineJoin.Round
+            };
+            var previousSmoothing = e.Graphics.SmoothingMode;
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            e.Graphics.DrawLines(check,
+            [
+                new PointF(box.Left + 3 * scale, box.Top + 8 * scale),
+                new PointF(box.Left + 7 * scale, box.Top + 12 * scale),
+                new PointF(box.Left + 13 * scale, box.Top + 5 * scale)
+            ]);
+            e.Graphics.SmoothingMode = previousSmoothing;
+        }
+    }
+
+    private sealed class TrayMenuColors : Forms.ProfessionalColorTable
+    {
+        public override Color ToolStripDropDownBackground => Color.FromArgb(24, 24, 24);
+        public override Color ImageMarginGradientBegin => ToolStripDropDownBackground;
+        public override Color ImageMarginGradientMiddle => ToolStripDropDownBackground;
+        public override Color ImageMarginGradientEnd => ToolStripDropDownBackground;
+        public override Color MenuBorder => Color.FromArgb(75, 75, 75);
+        public override Color MenuItemBorder => Color.FromArgb(100, 100, 100);
+        public override Color MenuItemSelected => Color.FromArgb(51, 51, 51);
+        public override Color SeparatorDark => MenuBorder;
+        public override Color SeparatorLight => MenuBorder;
     }
 
     [DllImport("user32.dll")]

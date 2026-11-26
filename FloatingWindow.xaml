@@ -3,84 +3,53 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="外设电量悬浮窗" Width="192" SizeToContent="Height"
         WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="True"
-        Background="Transparent" ShowInTaskbar="False" ShowActivated="False" Topmost="True"
+        Background="Transparent" ShowInTaskbar="False" ShowActivated="False"
         WindowStartupLocation="Manual" UseLayoutRounding="True"
         FontFamily="Segoe UI, Microsoft YaHei UI" Foreground="#FFFFFF"
         KeyboardNavigation.TabNavigation="Cycle">
     <Window.Resources>
-        <SolidColorBrush x:Key="PillHighlight" Color="#FFFFFF" />
-        <Geometry x:Key="GlyphKeyboard">M 3,5 L 21,5 Q 23,5 23,7 L 23,17 Q 23,19 21,19 L 3,19 Q 1,19 1,17 L 1,7 Q 1,5 3,5 Z M 5,9 L 6,9 M 11,9 L 12,9 M 17,9 L 18,9 M 5,13 L 6,13 M 11,13 L 12,13 M 17,13 L 18,13 M 8,16 L 16,16</Geometry>
-        <Geometry x:Key="GlyphMouse">M 12,2 A 7,7 0 0 1 19,9 L 19,15 A 7,7 0 0 1 5,15 L 5,9 A 7,7 0 0 1 12,2 Z M 12,6 L 12,10</Geometry>
-        <Geometry x:Key="GlyphHeadphones">M 3,16 L 3,11 A 9,9 0 0 1 21,11 L 21,16 M 3,13 L 6,13 Q 8,13 8,15 L 8,19 L 6,19 Q 3,19 3,16 Z M 21,13 L 18,13 Q 16,13 16,15 L 16,19 L 18,19 Q 21,19 21,16 Z</Geometry>
-        <Geometry x:Key="GlyphController">M 6,7 L 18,7 Q 20,7 21,10 L 23,16 Q 24,21 20,20 L 15,16 L 9,16 L 4,20 Q 0,21 1,16 L 3,10 Q 4,7 6,7 Z M 6,12 L 10,12 M 8,10 L 8,14 M 16,11 L 16,11.3 M 19,13 L 19,13.3</Geometry>
-        <Geometry x:Key="GlyphOther">M 12,3 L 21,8 L 21,16 L 12,21 L 3,16 L 3,8 Z M 3,8 L 12,13 L 21,8 M 12,13 L 12,21</Geometry>
-        <ControlTemplate x:Key="DeviceRing" TargetType="ContentControl">
-            <Viewbox Stretch="Uniform">
-                <Grid Width="28" Height="28">
-                    <Ellipse x:Name="RingTrack" Width="24" Height="24" Stroke="{Binding RingTrack}" StrokeThickness="2"
-                             HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    <Path x:Name="RingArc" Data="{Binding RingArc}" Stroke="{Binding RingTone}" StrokeThickness="2"
-                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" Stretch="None" />
-                    <Path x:Name="Glyph" Data="{StaticResource GlyphOther}" Width="12" Height="12" Stretch="Uniform"
-                          Stroke="#FFFFFF" StrokeThickness="1.25" StrokeLineJoin="Round"
-                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                          HorizontalAlignment="Center" VerticalAlignment="Center" />
-                </Grid>
-            </Viewbox>
-            <ControlTemplate.Triggers>
-                <DataTrigger Binding="{Binding Kind}" Value="keyboard">
-                    <Setter TargetName="Glyph" Property="Data" Value="{StaticResource GlyphKeyboard}" />
-                </DataTrigger>
-                <DataTrigger Binding="{Binding Kind}" Value="mouse">
-                    <Setter TargetName="Glyph" Property="Data" Value="{StaticResource GlyphMouse}" />
-                </DataTrigger>
-                <DataTrigger Binding="{Binding Kind}" Value="headphones">
-                    <Setter TargetName="Glyph" Property="Data" Value="{StaticResource GlyphHeadphones}" />
-                </DataTrigger>
-                <DataTrigger Binding="{Binding Kind}" Value="controller">
-                    <Setter TargetName="Glyph" Property="Data" Value="{StaticResource GlyphController}" />
-                </DataTrigger>
-            </ControlTemplate.Triggers>
-        </ControlTemplate>
-        <Style x:Key="PanelControl" TargetType="Button">
-            <Setter Property="Width" Value="25" />
-            <Setter Property="Height" Value="25" />
-            <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="1" CornerRadius="7">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#252525" />
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter Property="Background" Value="#3E3E3E" />
-                            </Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter Property="BorderBrush" Value="{StaticResource PillHighlight}" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="DeviceVisuals.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <Style x:Key="PanelControl" TargetType="Button">
+                <Setter Property="Width" Value="20" />
+                <Setter Property="Height" Value="22" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderBrush" Value="Transparent" />
+                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="1" CornerRadius="6">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#252525" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter Property="Background" Value="#3E3E3E" />
+                                </Trigger>
+                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                    <Setter Property="BorderBrush" Value="#FFFFFF" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </ResourceDictionary>
     </Window.Resources>
-    <Border x:Name="Surface" Margin="8" BorderBrush="#292929" BorderThickness="1" ClipToBounds="False">
+    <Border x:Name="Surface" Margin="8" Background="#000000" BorderBrush="#1E1E1E" BorderThickness="1">
         <Border.Style>
             <Style TargetType="Border">
-                <Setter Property="Background" Value="#000000" />
-                <Setter Property="CornerRadius" Value="20" />
+                <Setter Property="CornerRadius" Value="26" />
                 <Style.Triggers>
                     <DataTrigger Binding="{Binding Visibility, ElementName=ExpandedView}" Value="Visible">
-                        <Setter Property="Background" Value="#101010" />
-                        <Setter Property="CornerRadius" Value="18" />
+                        <Setter Property="CornerRadius" Value="22" />
                     </DataTrigger>
                 </Style.Triggers>
             </Style>
@@ -89,33 +58,29 @@
             <DropShadowEffect Color="#000000" BlurRadius="13" ShadowDepth="2" Opacity="0.72" />
         </Border.Effect>
         <Grid>
-            <Button x:Name="CompactView" Height="38" Cursor="Hand"
+            <Button x:Name="CompactView" Height="50" Cursor="Hand"
                     Click="ExpandClick" PreviewMouseLeftButtonDown="CompactMouseDown"
-                    ToolTip="单击展开 · 拖动可移动" AutomationProperties.Name="展开外设电量"
+                    ToolTip="单击展开 · 拖动可移动" AutomationProperties.Name="展开设备电量"
                     AutomationProperties.HelpText="单击展开。也可以按住拖动悬浮窗。"
                     FocusVisualStyle="{x:Null}">
                 <Button.Template>
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="Hit" Background="Transparent" BorderBrush="Transparent"
-                                BorderThickness="1" CornerRadius="19">
+                                BorderThickness="1" CornerRadius="25">
                             <ContentPresenter />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Hit" Property="Background" Value="#111111" />
+                                <Setter TargetName="Hit" Property="Background" Value="#0A0A0A" />
                             </Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="Hit" Property="BorderBrush" Value="{StaticResource PillHighlight}" />
+                                <Setter TargetName="Hit" Property="BorderBrush" Value="#FFFFFF" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Button.Template>
-                <Grid Margin="10,0,11,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="17" />
-                    </Grid.ColumnDefinitions>
-                    <ItemsControl x:Name="CompactItems" VerticalAlignment="Center" ClipToBounds="True">
+                <Grid Margin="4,0">
+                    <ItemsControl x:Name="CompactItems" VerticalAlignment="Center">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <UniformGrid Rows="1" />
@@ -126,140 +91,97 @@
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" ToolTip="{Binding Description}"
                                             AutomationProperties.Name="{Binding Description}">
                                     <ContentControl Template="{StaticResource DeviceRing}" Focusable="False"
-                                                    Width="27" Height="27"
-                                                    Margin="0,0,4,0" VerticalAlignment="Center" />
+                                                    Width="39" Height="39"
+                                                    Margin="0,0,3,0" VerticalAlignment="Center" />
                                     <TextBlock Text="{Binding Battery}" Foreground="{Binding BatteryTone}"
-                                               FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                               FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
                                 </StackPanel>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center"
                                 Visibility="{Binding Visibility, ElementName=CompactStatus}">
-                        <Path Data="M 8,1 L 2,8 L 7,8 L 5,14 L 12,6 L 7,6 Z" Fill="{StaticResource PillHighlight}"
+                        <Path Data="M 8,1 L 2,8 L 7,8 L 5,14 L 12,6 L 7,6 Z" Fill="#FFFFFF"
                               Width="12" Height="13" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,7,0" />
                         <TextBlock x:Name="CompactStatus" Text="正在读取电量…" Foreground="#ADADAD"
                                    FontSize="12" VerticalAlignment="Center" />
                     </StackPanel>
-                    <Path Grid.Column="1" Data="M 1,2 L 5,6 L 9,2" Stroke="#A3A3A3"
-                          StrokeThickness="1.3" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                          StrokeLineJoin="Round" Stretch="None" HorizontalAlignment="Right" VerticalAlignment="Center" />
                 </Grid>
             </Button>
-            <Grid x:Name="ExpandedView" Visibility="Collapsed" Margin="11,8,10,7">
+            <Grid x:Name="ExpandedView" Visibility="Collapsed" Margin="15,8,15,10">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <Grid Background="Transparent" MouseLeftButtonDown="DragHandleClick" Cursor="SizeAll"
+                <Grid Background="Transparent" MinHeight="25" MouseLeftButtonDown="DragHandleClick" Cursor="SizeAll"
                       ToolTip="按住拖动悬浮窗">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="24" />
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="25" />
-                        <ColumnDefinition Width="25" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="20" />
+                        <ColumnDefinition Width="20" />
                     </Grid.ColumnDefinitions>
-                    <Border Width="22" Height="22" CornerRadius="7" Background="#292929">
-                        <Path Data="M 8,1 L 2,8 L 7,8 L 5,14 L 12,6 L 7,6 Z" Fill="{StaticResource PillHighlight}"
-                              Width="11" Height="13" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    </Border>
-                    <TextBlock Grid.Column="1" Text="外设电量" FontSize="13" FontWeight="SemiBold"
-                               VerticalAlignment="Center" Margin="6,0,0,0" />
+                    <TextBlock Text="设备电量" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"
+                               AutomationProperties.HeadingLevel="Level1" />
+                    <TextBlock x:Name="DeviceCount" Grid.Column="1" Foreground="#A6A6A6" FontSize="12"
+                               FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,5,0" />
                     <Button x:Name="CollapseButton" Grid.Column="2" Style="{StaticResource PanelControl}" ToolTip="收起面板"
                             AutomationProperties.Name="收起面板" Click="CollapseClick">
-                        <Path Data="M 1,7 L 5,3 L 9,7" Stroke="#DDDDDD" StrokeThickness="1.3"
+                        <Path Data="M 1,6 L 4,3 L 7,6" Stroke="#A6A6A6" StrokeThickness="1.15"
                               StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Stretch="None" />
                     </Button>
                     <Button Grid.Column="3" Style="{StaticResource PanelControl}" ToolTip="隐藏悬浮窗"
                             AutomationProperties.Name="隐藏悬浮窗" Click="HideClick">
-                        <Path Data="M 2,2 L 10,10 M 10,2 L 2,10" Stroke="#DDDDDD" StrokeThickness="1.25"
+                        <Path Data="M 2,2 L 8,8 M 8,2 L 2,8" Stroke="#A6A6A6" StrokeThickness="1.15"
                               StrokeStartLineCap="Round" StrokeEndLineCap="Round" Stretch="None" />
                     </Button>
                 </Grid>
-                <Border Grid.Row="1" Height="1" Background="#323232" Margin="0,6,0,3" />
-                <TextBlock Grid.Row="2" x:Name="Status" Margin="2,6,1,6" Text="正在读取电量…"
-                           Foreground="#A9A9A9" FontSize="12" AutomationProperties.LiveSetting="Polite" />
-                <ScrollViewer Grid.Row="2" x:Name="DeviceScroll" MaxHeight="195"
+                <TextBlock Grid.Row="1" x:Name="Status" Margin="0,9,0,6" Text="正在读取电量…"
+                           Foreground="#ADADAD" FontSize="12" AutomationProperties.LiveSetting="Polite" />
+                <ScrollViewer Grid.Row="1" x:Name="DeviceScroll" Margin="0,3,0,0" MaxHeight="192"
                               VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                               Visibility="Collapsed" AutomationProperties.Name="无线设备电量">
                     <ScrollViewer.Resources>
-                        <Style x:Key="TrackSpace" TargetType="RepeatButton">
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="RepeatButton">
-                                        <Border Background="Transparent" />
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                        </Style>
-                        <Style TargetType="ScrollBar">
-                            <Setter Property="Width" Value="8" />
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="ScrollBar">
-                                        <Border Background="#222222" CornerRadius="4" Margin="1,1,0,1">
-                                            <Track x:Name="PART_Track" IsDirectionReversed="True" Orientation="Vertical">
-                                                <Track.DecreaseRepeatButton>
-                                                    <RepeatButton Command="{x:Static ScrollBar.PageUpCommand}" Style="{StaticResource TrackSpace}" />
-                                                </Track.DecreaseRepeatButton>
-                                                <Track.Thumb>
-                                                    <Thumb>
-                                                        <Thumb.Template>
-                                                            <ControlTemplate TargetType="Thumb">
-                                                                <Border Background="#717171" CornerRadius="4" x:Name="Handle" MinHeight="18" />
-                                                                <ControlTemplate.Triggers>
-                                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                                        <Setter TargetName="Handle" Property="Background" Value="#A0A0A0" />
-                                                                    </Trigger>
-                                                                </ControlTemplate.Triggers>
-                                                            </ControlTemplate>
-                                                        </Thumb.Template>
-                                                    </Thumb>
-                                                </Track.Thumb>
-                                                <Track.IncreaseRepeatButton>
-                                                    <RepeatButton Command="{x:Static ScrollBar.PageDownCommand}" Style="{StaticResource TrackSpace}" />
-                                                </Track.IncreaseRepeatButton>
-                                            </Track>
-                                        </Border>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                        </Style>
+                        <Style TargetType="ScrollBar" BasedOn="{StaticResource DeviceScrollBar}" />
                     </ScrollViewer.Resources>
                     <ItemsControl x:Name="DeviceItems" PreviewMouseLeftButtonDown="DragHandleClick">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Grid Height="38" Margin="2,0" ToolTip="{Binding Description}">
+                                <Grid Height="47" ToolTip="{Binding Description}">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="29" />
+                                        <ColumnDefinition Width="46" />
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="50" />
+                                        <ColumnDefinition Width="48" />
                                     </Grid.ColumnDefinitions>
+                                    <Border x:Name="Divider" Grid.ColumnSpan="3" Height="1" Background="#353535"
+                                            VerticalAlignment="Top" Visibility="Collapsed" />
                                     <ContentControl Template="{StaticResource DeviceRing}" Focusable="False"
-                                                    Width="28" Height="28"
+                                                    Width="41" Height="41"
                                                     HorizontalAlignment="Left" VerticalAlignment="Center" />
-                                    <StackPanel Grid.Column="1" Margin="5,0,4,0" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding Name}" FontSize="12" FontWeight="SemiBold"
+                                    <StackPanel Grid.Column="1" Margin="6,0,5,0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold"
                                                    TextTrimming="CharacterEllipsis" />
-                                        <TextBlock Foreground="{Binding ConnectionTone}" FontSize="10" Margin="0,2,0,0"
-                                                   TextTrimming="CharacterEllipsis">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Text" Value="{Binding Connection}" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Connection}" Value="2.4G">
-                                                            <Setter Property="Text" Value="2.4G 接收器" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
+                                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                            <Path x:Name="ConnectionGlyph" Data="{StaticResource GlyphReceiver}" Width="11" Height="12" Stretch="Uniform"
+                                                  Stroke="#B5B5B5" StrokeThickness="1.25" StrokeLineJoin="Round"
+                                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                                  VerticalAlignment="Center" Margin="0,0,6,0" />
+                                            <TextBlock Text="{Binding Connection}" Foreground="#B5B5B5" FontSize="11"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
                                     </StackPanel>
                                     <TextBlock Grid.Column="2" Text="{Binding Battery}" Foreground="{Binding BatteryTone}"
-                                               FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"
+                                               FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center"
                                                HorizontalAlignment="Right" AutomationProperties.Name="{Binding BatteryLabel}" />
                                 </Grid>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding HasDivider}" Value="True">
+                                        <Setter TargetName="Divider" Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Connection}" Value="蓝牙">
+                                        <Setter TargetName="ConnectionGlyph" Property="Data" Value="{StaticResource GlyphBluetooth}" />
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>

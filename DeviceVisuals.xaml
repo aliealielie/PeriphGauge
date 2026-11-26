@@ -1,0 +1,80 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Geometry x:Key="GlyphBluetooth">M 4,4 L 14,14 L 9,18 L 9,0 L 14,4 L 4,14</Geometry>
+    <Geometry x:Key="GlyphReceiver">M 4,8 L 14,8 A 2,2 0 0 1 16,10 L 16,16 L 2,16 L 2,10 A 2,2 0 0 1 4,8 Z M 6,8 L 6,2 L 12,2 L 12,8 M 8,4 L 10,4</Geometry>
+    <Geometry x:Key="GlyphKeyboard">M 3,5 L 21,5 Q 23,5 23,7 L 23,17 Q 23,19 21,19 L 3,19 Q 1,19 1,17 L 1,7 Q 1,5 3,5 Z M 5,9 L 6,9 M 11,9 L 12,9 M 17,9 L 18,9 M 5,13 L 6,13 M 11,13 L 12,13 M 17,13 L 18,13 M 8,16 L 16,16</Geometry>
+    <Geometry x:Key="GlyphMouse">M 12,2 A 7,7 0 0 1 19,9 L 19,15 A 7,7 0 0 1 5,15 L 5,9 A 7,7 0 0 1 12,2 Z M 12,6 L 12,10</Geometry>
+    <Geometry x:Key="GlyphHeadphones">M 3,16 L 3,11 A 9,9 0 0 1 21,11 L 21,16 M 3,13 L 6,13 Q 8,13 8,15 L 8,19 L 6,19 Q 3,19 3,16 Z M 21,13 L 18,13 Q 16,13 16,15 L 16,19 L 18,19 Q 21,19 21,16 Z</Geometry>
+    <Geometry x:Key="GlyphController">M 6,7 L 18,7 Q 20,7 21,10 L 23,16 Q 24,21 20,20 L 15,16 L 9,16 L 4,20 Q 0,21 1,16 L 3,10 Q 4,7 6,7 Z M 6,12 L 10,12 M 8,10 L 8,14 M 16,11 L 16,11.3 M 19,13 L 19,13.3</Geometry>
+    <Geometry x:Key="GlyphOther">M 12,3 L 21,8 L 21,16 L 12,21 L 3,16 L 3,8 Z M 3,8 L 12,13 L 21,8 M 12,13 L 12,21</Geometry>
+    <ControlTemplate x:Key="DeviceRing" TargetType="ContentControl">
+        <Viewbox Stretch="Uniform">
+            <Grid Width="28" Height="28">
+                <Ellipse x:Name="RingTrack" Width="24" Height="24" Stroke="{Binding RingTrack}" StrokeThickness="2"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <Path x:Name="RingArc" Data="{Binding RingArc}" Stroke="{Binding RingTone}" StrokeThickness="2"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" Stretch="None" />
+                <Path x:Name="Glyph" Data="{StaticResource GlyphOther}" Width="12" Height="12" Stretch="Uniform"
+                      Stroke="#FFFFFF" StrokeThickness="1.25" StrokeLineJoin="Round"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Grid>
+        </Viewbox>
+        <ControlTemplate.Triggers>
+            <DataTrigger Binding="{Binding Kind}" Value="keyboard">
+                <Setter TargetName="Glyph" Property="Data" Value="{StaticResource GlyphKeyboard}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Kind}" Value="mouse">
+                <Setter TargetName="Glyph" Property="Data" Value="{StaticResource GlyphMouse}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Kind}" Value="headphones">
+                <Setter TargetName="Glyph" Property="Data" Value="{StaticResource GlyphHeadphones}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Kind}" Value="controller">
+                <Setter TargetName="Glyph" Property="Data" Value="{StaticResource GlyphController}" />
+            </DataTrigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+    <Style x:Key="TrackSpace" TargetType="RepeatButton">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Background="Transparent" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="DeviceScrollBar" TargetType="ScrollBar">
+        <Setter Property="Width" Value="8" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollBar">
+                    <Border Background="#222222" CornerRadius="4" Margin="1,1,0,1">
+                        <Track x:Name="PART_Track" IsDirectionReversed="True" Orientation="Vertical">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Command="{x:Static ScrollBar.PageUpCommand}" Style="{StaticResource TrackSpace}" />
+                            </Track.DecreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb>
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Border Background="#717171" CornerRadius="4" x:Name="Handle" MinHeight="18" />
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Handle" Property="Background" Value="#A0A0A0" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Command="{x:Static ScrollBar.PageDownCommand}" Style="{StaticResource TrackSpace}" />
+                            </Track.IncreaseRepeatButton>
+                        </Track>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+</ResourceDictionary>

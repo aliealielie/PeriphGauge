@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Threading;
 using DrawingPoint = System.Drawing.Point;
 using Screen = System.Windows.Forms.Screen;
@@ -20,6 +21,7 @@ public partial class MainWindow : Window
     internal event EventHandler? RefreshRequested;
     internal event EventHandler? WidgetToggleRequested;
     internal event EventHandler? StartupToggleRequested;
+    internal event EventHandler? TopmostToggleRequested;
     internal event EventHandler? DesktopShortcutRequested;
     internal bool AllowClose { get; set; }
     internal bool IsPreview { get; set; }
@@ -59,7 +61,7 @@ public partial class MainWindow : Window
         if (devices.Count == 0)
         {
             Summary.Text = "未发现无线设备";
-            ShowPlaceholder("暂无可显示的设备", "唤醒蓝牙设备，或检查 2.4G 接收器是否已插好，然后点击刷新。");
+            ShowPlaceholder("暂无可显示的设备", "唤醒蓝牙设备，或检查 2.4 GHz 接收器是否已插好，然后点击刷新。");
             return;
         }
 
@@ -69,24 +71,22 @@ public partial class MainWindow : Window
             .GroupBy(device => device.Connection)
             .OrderBy(group => group.Key == "蓝牙" ? 0 : 1)
             .Select(group => new DeviceGroup(
-                group.Key,
-                group.Key == "蓝牙" ? "#A4C9FA" : "#93E9C5",
-                group.Key == "蓝牙"
-                    ? "M 4,4 L 14,14 L 9,18 L 9,0 L 14,4 L 4,14"
-                    : "M 4,8 L 14,8 A 2,2 0 0 1 16,10 L 16,16 L 2,16 L 2,10 A 2,2 0 0 1 4,8 Z M 6,8 L 6,2 L 12,2 L 12,8 M 8,4 L 10,4",
+                group.Key == "2.4G 接收器" ? "2.4 GHz 接收器" : group.Key,
+                (Geometry)FindResource(group.Key == "蓝牙" ? "GlyphBluetooth" : "GlyphReceiver"),
                 group.Select(ToRow).OrderBy(row => row.Value ?? 101).ThenBy(row => row.Name).ToArray()))
             .ToArray();
         DeviceScroll.Visibility = Visibility.Visible;
         Placeholder.Visibility = Visibility.Collapsed;
     }
 
-    internal void SetOptions(bool widgetVisible, bool startsWithWindows)
+    internal void SetOptions(bool widgetVisible, bool startsWithWindows, bool widgetTopmost)
     {
         syncingOptions = true;
         try
         {
             WidgetOption.IsChecked = widgetVisible;
             StartupOption.IsChecked = startsWithWindows;
+            TopmostOption.IsChecked = widgetTopmost;
         }
         finally
         {
@@ -172,6 +172,12 @@ public partial class MainWindow : Window
             StartupToggleRequested?.Invoke(this, EventArgs.Empty);
     }
 
+    private void TopmostChanged(object sender, RoutedEventArgs e)
+    {
+        if (!syncingOptions && !IsPreview)
+            TopmostToggleRequested?.Invoke(this, EventArgs.Empty);
+    }
+
     private void DesktopShortcutClick(object sender, RoutedEventArgs e) => DesktopShortcutRequested?.Invoke(this, EventArgs.Empty);
 
     private void HideClick(object sender, RoutedEventArgs e) => DismissPanel();
@@ -224,29 +230,39 @@ public partial class MainWindow : Window
 
     private static DeviceRow ToRow(BatteryDevice device)
     {
-        var (kind, icon) = device.Kind switch
+        string kindLabel = device.Kind switch
         {
-            "keyboard" => ("键盘", "M 3,5 L 21,5 Q 23,5 23,7 L 23,17 Q 23,19 21,19 L 3,19 Q 1,19 1,17 L 1,7 Q 1,5 3,5 Z M 5,9 L 6,9 M 10,9 L 11,9 M 15,9 L 16,9 M 19,9 L 20,9 M 5,13 L 6,13 M 10,13 L 11,13 M 15,13 L 16,13 M 19,13 L 20,13 M 8,16 L 16,16"),
-            "mouse" => ("鼠标", "M 12,2 A 7,7 0 0 1 19,9 L 19,15 A 7,7 0 0 1 5,15 L 5,9 A 7,7 0 0 1 12,2 Z M 12,6 L 12,10"),
-            "headphones" => ("耳机", "M 4,15 L 4,11 A 8,8 0 0 1 20,11 L 20,15 M 4,13 L 6,13 Q 8,13 8,15 L 8,19 L 6,19 Q 3,19 3,16 L 3,15 Q 3,13 4,13 Z M 20,13 L 18,13 Q 16,13 16,15 L 16,19 L 18,19 Q 21,19 21,16 L 21,15 Q 21,13 20,13 Z"),
-            "controller" => ("手柄", "M 6,7 L 18,7 Q 20,7 21,10 L 23,16 Q 24,21 20,20 L 15,16 L 9,16 L 4,20 Q 0,21 1,16 L 3,10 Q 4,7 6,7 Z M 6,12 L 10,12 M 8,10 L 8,14 M 16,11 L 16,11.3 M 19,13 L 19,13.3"),
-            _ => ("无线设备", "M 12,3 L 21,8 L 21,16 L 12,21 L 3,16 L 3,8 Z M 3,8 L 12,13 L 21,8 M 12,13 L 12,21")
+            "keyboard" => "键盘",
+            "mouse" => "鼠标",
+            "headphones" => "耳机",
+            "controller" => "手柄",
+            _ => "无线设备"
         };
 
         int? value = device.Percent is >= 0 and <= 100 ? device.Percent : null;
-        string detail = value.HasValue ? kind : $"{kind} · 未上报电量";
-        string tone = value switch { null => "#A9B7BD", <= 20 => "#FFAE99", _ => "#93E9C5" };
-        return new DeviceRow(device.Name, detail, icon, value, tone);
+        string detail = value switch
+        {
+            null => $"{kindLabel} · 未上报电量",
+            <= BatteryRingVisual.LowThreshold => $"{kindLabel} · 低电量",
+            _ => kindLabel
+        };
+        var (ringArc, ringTone, ringTrack) = BatteryRingVisual.Create(value);
+        return new DeviceRow(device.Name, device.Kind, detail, value, ringArc, ringTone, ringTrack);
     }
 
-    private sealed record DeviceGroup(string Name, string Tone, string Icon, DeviceRow[] Rows);
+    private sealed record DeviceGroup(string Name, Geometry Icon, DeviceRow[] Rows);
 
-    private sealed record DeviceRow(string Name, string Detail, string Icon, int? Value, string Tone)
+    private sealed record DeviceRow(
+        string Name, string Kind, string Detail, int? Value, Geometry RingArc, string RingTone, string RingTrack)
     {
-        public bool HasBattery => Value.HasValue;
-        public string Number => Value?.ToString() ?? "—";
-        public string Unit => HasBattery ? "%" : string.Empty;
-        public string BatteryLabel => HasBattery ? $"电量 {Number}%" : "未上报电量";
+        public string Battery => Value is int percent ? $"{percent}%" : "—";
+        public string BatteryTone => Value.HasValue ? "#FFFFFF" : "#969696";
+        public string BatteryLabel => Value switch
+        {
+            null => "未上报电量",
+            <= BatteryRingVisual.LowThreshold => $"低电量 {Battery}",
+            _ => $"电量 {Battery}"
+        };
     }
 
     [StructLayout(LayoutKind.Sequential)]
