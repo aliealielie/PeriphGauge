@@ -82,7 +82,8 @@ internal static class Program
         bool widgetExpanded = false;
         bool startsWithWindows = false;
         DrawingPoint? widgetPosition = null;
-        ApplyOption(() => (widgetVisible, widgetPosition, widgetTopmost, widgetExpanded) = WidgetSettings.Load(),
+        DockEdge widgetEdge = DockEdge.None;
+        ApplyOption(() => (widgetVisible, widgetPosition, widgetTopmost, widgetExpanded, widgetEdge) = WidgetSettings.Load(),
             "无法读取悬浮窗设置", showDialog: false);
         widget.Topmost = widgetTopmost;
         ApplyOption(() => startsWithWindows = DesktopIntegration.StartsWithWindows, "无法读取自启动状态", showDialog: false);
@@ -96,7 +97,7 @@ internal static class Program
         void RestoreWidget()
         {
             if (widgetVisible)
-                widget.OpenAt(widgetPosition, widgetExpanded);
+                widget.OpenAt(widgetPosition, widgetExpanded, widgetEdge);
         }
 
         void SetWidgetVisibility(bool visible)
@@ -150,10 +151,10 @@ internal static class Program
             widgetExpanded = expanded;
             ApplyOption(() => WidgetSettings.SetExpanded(expanded), "无法保存悬浮窗展开状态");
         };
-        widget.PositionChangedByDrag += (_, position) =>
+        widget.PlacementChangedByUser += (_, placement) =>
         {
-            widgetPosition = position;
-            ApplyOption(() => WidgetSettings.SetPosition(position), "无法保存悬浮窗位置");
+            (widgetPosition, widgetEdge) = placement;
+            ApplyOption(() => WidgetSettings.SetPosition(placement.Position, placement.Edge), "无法保存悬浮窗位置");
         };
         ShowOptionState();
 

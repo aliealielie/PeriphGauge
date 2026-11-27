@@ -12,6 +12,7 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="DeviceVisuals.xaml" />
             </ResourceDictionary.MergedDictionaries>
+            <DropShadowEffect x:Key="SurfaceShadow" Color="#000000" BlurRadius="13" ShadowDepth="2" Opacity="0.72" />
             <Style x:Key="PanelControl" TargetType="Button">
                 <Setter Property="Width" Value="20" />
                 <Setter Property="Height" Value="22" />
@@ -43,25 +44,38 @@
             </Style>
         </ResourceDictionary>
     </Window.Resources>
-    <Border x:Name="Surface" Margin="8" Background="#000000" BorderBrush="#1E1E1E" BorderThickness="1">
+    <Border x:Name="Surface" Background="#000000" BorderBrush="#1E1E1E">
         <Border.Style>
             <Style TargetType="Border">
+                <Setter Property="Margin" Value="8" />
+                <Setter Property="BorderThickness" Value="1" />
                 <Setter Property="CornerRadius" Value="26" />
+                <Setter Property="Effect" Value="{StaticResource SurfaceShadow}" />
                 <Style.Triggers>
                     <DataTrigger Binding="{Binding Visibility, ElementName=ExpandedView}" Value="Visible">
                         <Setter Property="CornerRadius" Value="22" />
                     </DataTrigger>
+                    <DataTrigger Binding="{Binding Visibility, ElementName=DockHandle}" Value="Visible">
+                        <Setter Property="Margin" Value="0" />
+                        <Setter Property="BorderThickness" Value="0" />
+                        <Setter Property="CornerRadius" Value="0,12,12,0" />
+                        <Setter Property="Effect" Value="{x:Null}" />
+                    </DataTrigger>
+                    <MultiDataTrigger>
+                        <MultiDataTrigger.Conditions>
+                            <Condition Binding="{Binding Visibility, ElementName=DockHandle}" Value="Visible" />
+                            <Condition Binding="{Binding Tag, ElementName=DockHandle}" Value="Right" />
+                        </MultiDataTrigger.Conditions>
+                        <Setter Property="CornerRadius" Value="12,0,0,12" />
+                    </MultiDataTrigger>
                 </Style.Triggers>
             </Style>
         </Border.Style>
-        <Border.Effect>
-            <DropShadowEffect Color="#000000" BlurRadius="13" ShadowDepth="2" Opacity="0.72" />
-        </Border.Effect>
         <Grid>
             <Button x:Name="CompactView" Height="50" Cursor="Hand"
                     Click="ExpandClick" PreviewMouseLeftButtonDown="CompactMouseDown"
-                    ToolTip="单击展开 · 拖动可移动" AutomationProperties.Name="展开设备电量"
-                    AutomationProperties.HelpText="单击展开。也可以按住拖动悬浮窗。"
+                    ToolTip="单击展开 · 拖到左右边缘松开可收起" AutomationProperties.Name="展开设备电量"
+                    AutomationProperties.HelpText="单击展开。拖到屏幕左右边缘并松开，可收起悬浮窗。"
                     FocusVisualStyle="{x:Null}">
                 <Button.Template>
                     <ControlTemplate TargetType="Button">
@@ -108,16 +122,57 @@
                     </StackPanel>
                 </Grid>
             </Button>
+            <Button x:Name="DockHandle" Width="24" Height="48" Visibility="Collapsed"
+                    Cursor="Hand" Click="UndockClick" ToolTip="恢复悬浮窗"
+                    AutomationProperties.Name="恢复悬浮窗" FocusVisualStyle="{x:Null}">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="DockFace" Background="#000000" BorderBrush="#353535" BorderThickness="1"
+                                CornerRadius="{Binding CornerRadius, ElementName=Surface}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="DockFace" Property="Background" Value="#202020" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="DockFace" Property="Background" Value="#333333" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="DockFace" Property="BorderBrush" Value="#FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Button.Template>
+                <Path x:Name="DockChevron" Data="M 0,0 L 5,5 L 0,10" Width="8" Height="13" Stretch="Uniform"
+                      Stroke="#FFFFFF" StrokeThickness="1.55" StrokeLineJoin="Round"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" RenderTransformOrigin="0.5,0.5">
+                    <Path.Style>
+                        <Style TargetType="Path">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Tag, ElementName=DockHandle}" Value="Right">
+                                    <Setter Property="RenderTransform">
+                                        <Setter.Value>
+                                            <ScaleTransform ScaleX="-1" />
+                                        </Setter.Value>
+                                    </Setter>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Path.Style>
+                </Path>
+            </Button>
             <Grid x:Name="ExpandedView" Visibility="Collapsed" Margin="15,8,15,10">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <Grid Background="Transparent" MinHeight="25" MouseLeftButtonDown="DragHandleClick" Cursor="SizeAll"
-                      ToolTip="按住拖动悬浮窗">
+                      ToolTip="按住移动 · 拖到左右边缘松开可收起">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="20" />
                         <ColumnDefinition Width="20" />
                         <ColumnDefinition Width="20" />
                     </Grid.ColumnDefinitions>
@@ -125,12 +180,20 @@
                                AutomationProperties.HeadingLevel="Level1" />
                     <TextBlock x:Name="DeviceCount" Grid.Column="1" Foreground="#A6A6A6" FontSize="12"
                                FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,5,0" />
-                    <Button x:Name="CollapseButton" Grid.Column="2" Style="{StaticResource PanelControl}" ToolTip="收起面板"
+                    <Button x:Name="DockButton" Grid.Column="2" Style="{StaticResource PanelControl}" ToolTip="收到侧边"
+                            AutomationProperties.Name="收到侧边"
+                            AutomationProperties.HelpText="把悬浮窗收到最近的屏幕侧边。"
+                            Click="DockClick">
+                        <Path Data="M 1,1 L 1,11 M 11,1 L 11,11 M 5,4 L 3,6 L 5,8 M 7,4 L 9,6 L 7,8"
+                              Stroke="#A6A6A6" StrokeThickness="1.1" StrokeLineJoin="Round"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" Stretch="None" />
+                    </Button>
+                    <Button x:Name="CollapseButton" Grid.Column="3" Style="{StaticResource PanelControl}" ToolTip="收起面板"
                             AutomationProperties.Name="收起面板" Click="CollapseClick">
                         <Path Data="M 1,6 L 4,3 L 7,6" Stroke="#A6A6A6" StrokeThickness="1.15"
                               StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Stretch="None" />
                     </Button>
-                    <Button Grid.Column="3" Style="{StaticResource PanelControl}" ToolTip="隐藏悬浮窗"
+                    <Button Grid.Column="4" Style="{StaticResource PanelControl}" ToolTip="隐藏悬浮窗"
                             AutomationProperties.Name="隐藏悬浮窗" Click="HideClick">
                         <Path Data="M 2,2 L 8,8 M 8,2 L 2,8" Stroke="#A6A6A6" StrokeThickness="1.15"
                               StrokeStartLineCap="Round" StrokeEndLineCap="Round" Stretch="None" />

@@ -20,15 +20,17 @@ public partial class FloatingWindow : Window
     private const double CompactWidth = 192;
     private const double CompactHeight = 68;
     private const double ExpandedWidth = 271;
+    private const double SnapDistance = 12;
 
     private DrawingPoint? preferredLocation;
     private PointerPress? pointerPress;
     private bool isExpanded;
+    private DockEdge dockEdge;
     private bool dragging;
 
     internal event EventHandler? HideRequested;
     internal event EventHandler<bool>? ExpansionChangedByUser;
-    internal event EventHandler<DrawingPoint>? PositionChangedByDrag;
+    internal event EventHandler<(DrawingPoint Position, DockEdge Edge)>? PlacementChangedByUser;
     internal bool AllowClose { get; set; }
 
     public FloatingWindow()
@@ -65,10 +67,10 @@ public partial class FloatingWindow : Window
         CompactStatus.Visibility = Visibility.Visible;
     }
 
-    internal void OpenAt(DrawingPoint? location, bool expanded = false)
+    internal void OpenAt(DrawingPoint? location, bool expanded = false, DockEdge edge = DockEdge.None)
     {
         preferredLocation = location;
-        SetExpanded(expanded, animate: false);
+        SetView(expanded, edge, animate: false);
         if (WindowState == WindowState.Minimized)
             WindowState = WindowState.Normal;
 
@@ -110,7 +112,9 @@ public partial class FloatingWindow : Window
         if (e.Key == Key.Escape)
         {
             e.Handled = true;
-            if (isExpanded)
+            if (dockEdge != DockEdge.None)
+                Undock();
+            else if (isExpanded)
                 SetExpandedByUser(false);
             else
                 HideRequested?.Invoke(this, EventArgs.Empty);
@@ -124,25 +128,50 @@ public partial class FloatingWindow : Window
 
     private void CollapseClick(object sender, RoutedEventArgs e) => SetExpandedByUser(false);
 
+    private void DockClick(object sender, RoutedEventArgs e)
+    {
+        var window = new WindowInteropHelper(this).Handle;
+        if (!GetWindowRect(window, out var bounds))
+            return;
+
+        var screen = Screen.FromHandle(window);
+        var work = screen.WorkingArea;
+        var edge = bounds.Left - work.Left <= work.Right - bounds.Right ? DockEdge.Left : DockEdge.Right;
+        SavePlacement(preferredLocation ?? CompactAnchor(bounds, work), edge, screen);
+    }
+
+    private void UndockClick(object sender, RoutedEventArgs e) => Undock();
+
+    private void Undock()
+    {
+        var screen = Screen.FromHandle(new WindowInteropHelper(this).Handle);
+        SavePlacement(preferredLocation ?? screen.WorkingArea.Location, DockEdge.None, screen);
+    }
+
     private void SetExpandedByUser(bool expanded)
     {
-        if (SetExpanded(expanded))
+        if (SetView(expanded, DockEdge.None))
             ExpansionChangedByUser?.Invoke(this, expanded);
     }
 
-    private bool SetExpanded(bool expanded, bool animate = true)
+    private bool SetView(bool expanded, DockEdge edge, bool animate = true)
     {
-        if (expanded == isExpanded)
+        if (expanded == isExpanded && edge == dockEdge)
             return false;
 
         double currentWidth = ActualWidth;
+        bool docked = edge != DockEdge.None;
+        bool morphIsland = !docked && dockEdge == DockEdge.None;
+        dockEdge = edge;
         isExpanded = expanded;
-        CompactView.Visibility = expanded ? Visibility.Collapsed : Visibility.Visible;
-        ExpandedView.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
-        double targetWidth = expanded ? ExpandedWidth : CompactWidth;
+        DockHandle.Tag = edge.ToString();
+        DockHandle.Visibility = docked ? Visibility.Visible : Visibility.Collapsed;
+        CompactView.Visibility = !docked && !expanded ? Visibility.Visible : Visibility.Collapsed;
+        ExpandedView.Visibility = !docked && expanded ? Visibility.Visible : Visibility.Collapsed;
+        double targetWidth = docked ? DockHandle.Width : expanded ? ExpandedWidth : CompactWidth;
         Width = targetWidth;
-        var activeView = expanded ? (FrameworkElement)ExpandedView : CompactView;
-        if (animate && IsVisible && SystemParameters.ClientAreaAnimation)
+        FrameworkElement activeView = docked ? DockHandle : expanded ? ExpandedView : CompactView;
+        if (animate && morphIsland && IsVisible && SystemParameters.ClientAreaAnimation)
         {
             var duration = TimeSpan.FromMilliseconds(160);
             BeginAnimation(WidthProperty, new DoubleAnimation(currentWidth, targetWidth, duration)
@@ -162,7 +191,7 @@ public partial class FloatingWindow : Window
         }
 
         if (IsActive)
-            (expanded ? (FrameworkElement)CollapseButton : CompactView).Focus();
+            (docked ? DockHandle : expanded ? CollapseButton : CompactView).Focus();
         return true;
     }
 
@@ -225,9 +254,12 @@ public partial class FloatingWindow : Window
         if (pointerPress is not { } press)
             return;
 
+        DrawingPoint? release = GetCursorPos(out var cursor) ? cursor : null;
+        if (release.HasValue)
+            TrackPointer(press, cursor);
         bool expand = !dragging && press.Handle == CompactView
             && new Rect(CompactView.RenderSize).Contains(e.GetPosition(CompactView));
-        EndPointerPress();
+        EndPointerPress(release);
         if (expand)
             SetExpandedByUser(true);
         e.Handled = true;
@@ -240,7 +272,7 @@ public partial class FloatingWindow : Window
             EndPointerPress();
     }
 
-    private void EndPointerPress()
+    private void EndPointerPress(DrawingPoint? release = null)
     {
         if (pointerPress is not { } press)
             return;
@@ -255,21 +287,41 @@ public partial class FloatingWindow : Window
         if (!moved || !GetWindowRect(window, out var bounds) || bounds.TopLeft == press.WindowOrigin)
             return;
 
-        var screen = Screen.FromRectangle(DrawingRectangle.FromLTRB(bounds.Left, bounds.Top, bounds.Right, bounds.Bottom));
+        var screen = release.HasValue ? Screen.FromPoint(release.Value)
+            : Screen.FromRectangle(DrawingRectangle.FromLTRB(bounds.Left, bounds.Top, bounds.Right, bounds.Bottom));
         var work = screen.WorkingArea;
+        int margin = ToPixels(window, SnapDistance);
+        var edge = DockEdge.None;
+        if (release.HasValue)
+        {
+            if (bounds.Left <= work.Left + margin)
+                edge = DockEdge.Left;
+            else if (bounds.Right >= work.Right - margin)
+                edge = DockEdge.Right;
+        }
+        SavePlacement(CompactAnchor(bounds, work), edge, screen);
+    }
+
+    private DrawingPoint CompactAnchor(WindowRect bounds, DrawingRectangle work)
+    {
+        var window = new WindowInteropHelper(this).Handle;
         int compactWidth = ToPixels(window, CompactWidth);
         int compactHeight = ToPixels(window, CompactHeight);
         // Persist the compact top-left even when the user drags the expanded island.
-        var location = new DrawingPoint(
+        return new DrawingPoint(
             Math.Clamp(bounds.Left + (bounds.Width - compactWidth) / 2, work.Left, Math.Max(work.Left, work.Right - compactWidth)),
             Math.Clamp(bounds.Top, work.Top, Math.Max(work.Top, work.Bottom - compactHeight)));
-        bool changed = preferredLocation != location;
+    }
+
+    private void SavePlacement(DrawingPoint location, DockEdge edge, Screen screen)
+    {
+        bool changed = preferredLocation != location || edge != dockEdge;
         preferredLocation = location;
+        if (SetView(isExpanded, edge, animate: false))
+            UpdateLayout();
         PositionOnScreen(screen);
         if (changed)
-        {
-            PositionChangedByDrag?.Invoke(this, location);
-        }
+            PlacementChangedByUser?.Invoke(this, (location, edge));
     }
 
     private IntPtr HandleWindowMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -311,9 +363,13 @@ public partial class FloatingWindow : Window
 
             int right = Math.Max(work.Left, work.Right - rect.Width);
             int bottom = Math.Max(work.Top, work.Bottom - rect.Height);
-            int x = preferredLocation is DrawingPoint anchor
-                ? anchor.X + (ToPixels(window, CompactWidth) - rect.Width) / 2
-                : work.Left + (work.Width - rect.Width) / 2;
+            int x = dockEdge switch
+            {
+                DockEdge.Left => work.Left,
+                DockEdge.Right => right,
+                _ when preferredLocation is DrawingPoint anchor => anchor.X + (ToPixels(window, CompactWidth) - rect.Width) / 2,
+                _ => work.Left + (work.Width - rect.Width) / 2
+            };
             int y = Math.Clamp(preferredLocation?.Y ?? work.Top + ToPixels(window, 20), work.Top, bottom);
             x = Math.Clamp(x, work.Left, right);
             if (rect.Left != x || rect.Top != y)

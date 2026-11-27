@@ -5,6 +5,7 @@
 <p>
   <img src="docs/widget-compact.png" width="192" align="middle" alt="收起的黑色胶囊，键盘电量 84%，鼠标电量 16%" />
   <img src="docs/widget.png" width="271" align="middle" alt="展开后，键盘标记为蓝牙，鼠标标记为 2.4 GHz 接收器" />
+  <img src="docs/widget-docked.png" width="24" align="middle" alt="停靠在右侧时只显示一个朝左的黑色把手" />
 </p>
 
 ## 下载与使用
@@ -23,6 +24,7 @@
 
 - 勾选 **显示桌面悬浮窗** 后，胶囊最多显示两台设备，优先显示键盘和鼠标。白色图标外的圆环表示剩余电量，20% 及以下用红色，超过 20% 用绿色。灰色空环和「—」表示设备尚未上报电量。
 - 点击胶囊查看所有设备和连接方式，点向上箭头收起。拖动可调整位置。勾选 **悬浮窗置顶** 后，胶囊会显示在普通窗口上方。
+- 将胶囊或展开的悬浮窗拖到屏幕左边或右边，松手后只留一个黑色小把手。也可以点击展开面板顶部的 **收到侧边** 按钮，停靠到较近的一侧。点击把手上的箭头即可恢复。重新启动程序后，悬浮窗会记住停靠的边和高度。
 - 勾选 **开机自启动** 后，程序会在登录 Windows 时进入托盘。上次已开启的悬浮窗会恢复到原来的位置，并沿用置顶和展开设置。若想在登录后自己打开悬浮窗，取消勾选「显示桌面悬浮窗」即可。
 - 点击 **创建桌面快捷方式**，即可通过桌面上的「外设电量」图标打开面板。
 
@@ -50,7 +52,7 @@ dotnet publish PeriphGauge.csproj -c Release -r win-x64 --self-contained -p:Publ
 
 把 `release/PeriphGauge.exe` 改名为 `PeriphGauge-win-x64.exe` 即为发布文件。传入 `--preview` 可打开带示例数据的面板。
 
-使用 `pwsh -File tools/Smoke.ps1 -ExePath release/PeriphGauge-win-x64.exe` 可检查便携版的设备扫描与报告格式。在 PowerShell 7.6 中执行 `dotnet build -c Release` 后，运行 `pwsh -NoProfile -STA -File tools/WidgetCloseSmoke.ps1` 可验证悬浮窗的关闭和隐藏行为。
+使用 `pwsh -File tools/Smoke.ps1 -ExePath release/PeriphGauge-win-x64.exe` 可检查便携版的设备扫描与报告格式。在 PowerShell 7.6 中执行 `dotnet build -c Release` 后，运行 `pwsh -NoProfile -STA -File tools/WidgetCloseSmoke.ps1` 可验证悬浮窗的关闭、左右停靠和恢复。
 
 ## 参考项目与协议
 
