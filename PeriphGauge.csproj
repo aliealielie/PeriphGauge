@@ -13,7 +13,7 @@
     <Product>外设电量</Product>
     <Description>Windows 无线外设电量托盘</Description>
     <Copyright>Copyright © 2026 PeriphGauge contributors</Copyright>
-    <Version>1.4.0</Version>
+    <Version>1.5.0</Version>
   </PropertyGroup>
   <ItemGroup>
     <Resource Include="App.ico" />

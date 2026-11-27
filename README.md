@@ -11,7 +11,7 @@
 ## 下载与使用
 
 1. 下载 [PeriphGauge-win-x64.exe](https://github.com/aliealielie/PeriphGauge/releases/latest/download/PeriphGauge-win-x64.exe)，双击运行。便携版已包含 .NET 运行时，使用普通用户权限即可。
-2. 托盘数字显示当前最低的已知电量。鼠标悬停可查看设备与连接方式，点击图标可展开完整面板。如果图标在任务栏的 `^` 菜单里，可以将它拖到时钟旁。
+2. 托盘数字显示本次读到的最低电量。鼠标悬停可查看设备与连接方式，点击图标可展开完整面板。如果图标在任务栏的 `^` 菜单里，可以将它拖到时钟旁。
 3. 电量每分钟刷新一次，也可以在面板内手动刷新。关闭面板后程序继续在托盘运行，右键托盘图标可退出。
 
 <img src="docs/preview.png" width="350" alt="托盘面板示例，按蓝牙和 2.4 GHz 接收器分组" />
@@ -35,9 +35,13 @@
 | 连接方式 | 如何读取电量 |
 | --- | --- |
 | 蓝牙 | 读取 Windows 提供的电量属性，支持标准 BLE 电量服务。是否显示百分比取决于设备上报。 |
-| 2.4 GHz 接收器 | 已实测迈从 A5（`2023:F013`）和 K99 所用的 Compx 接收器（`05AC:024F`）。部分其他接收器可被发现，是否读得到电量取决于其协议。 |
+| 2.4 GHz 接收器 | 已实测迈从 A5（`2023:F013`）和 K99 所用的 Compx 接收器（`05AC:024F`）。A5 明确上报正在充电时显示「充电中」。Compx 接收器不同固件的充电标记含义不同，目前只显示电量。部分其他接收器可被发现，能否读取电量取决于其协议。 |
 
-无法取得有效读数时显示「未上报电量」。设备休眠时，可以唤醒后点击刷新。目前提供 Windows 11 x64 便携版。
+同一设备的电量一次变化达到 10 个百分点时，程序会立即再读一次。如果两次新读数相差不超过 2 个百分点，就采用复读值；如果读数回到了原来的范围，也采用复读值。其余情况保留上次确认的读数，并标出时间。
+
+设备仍能识别但暂时读不到电量时，界面用灰色显示最近 10 分钟内确认过的电量，标明「上次」和读取时间。设备从扫描结果中消失或程序退出后会清除对应记录。没有近期读数时显示「—」。可以唤醒设备后点击刷新。目前提供 Windows 11 x64 便携版。
+
+<img src="docs/widget-reading.png" width="192" alt="示例：键盘上次在 08:30 读到 80%，鼠标当前为 46% 且正在充电" />
 
 程序在本机读取设备信息和电量，无联网依赖。
 
@@ -53,6 +57,8 @@ dotnet publish PeriphGauge.csproj -c Release -r win-x64 --self-contained -p:Publ
 把 `release/PeriphGauge.exe` 改名为 `PeriphGauge-win-x64.exe` 即为发布文件。传入 `--preview` 可打开带示例数据的面板。
 
 使用 `pwsh -File tools/Smoke.ps1 -ExePath release/PeriphGauge-win-x64.exe` 可检查便携版的设备扫描与报告格式。在 PowerShell 7.6 中执行 `dotnet build -c Release` 后，运行 `pwsh -NoProfile -STA -File tools/WidgetCloseSmoke.ps1` 可验证悬浮窗的关闭、左右停靠和恢复。
+
+使用 `pwsh -File tools/BatteryHistorySmoke.ps1` 和 `pwsh -File tools/ReceiverBatterySmoke.ps1` 可分别验证跳数复读、历史读数过期和接收器回包解析。这两项检查无需连接外设。
 
 ## 参考项目与协议
 

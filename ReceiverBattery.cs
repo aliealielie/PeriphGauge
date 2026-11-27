@@ -14,13 +14,13 @@ internal static class ReceiverBattery
     private const int HidSuccess = 0x00110000;
     private const uint Overlapped = 0x40000000;
 
-    internal static async Task<(int? Percent, string? Model)> ReadAsync(string usbInstanceId)
+    internal static async Task<(int? Percent, string? Model, bool? IsCharging)> ReadAsync(string usbInstanceId)
     {
         var isMouse = usbInstanceId.StartsWith(@"USB\VID_2023&PID_F013\", StringComparison.OrdinalIgnoreCase);
         if (!isMouse && !usbInstanceId.StartsWith(@"USB\VID_05AC&PID_024F\", StringComparison.OrdinalIgnoreCase))
-            return (null, null);
+            return default;
         if (CM_Locate_DevNode(out var receiver, usbInstanceId, 0) != 0)
-            return (null, null);
+            return default;
 
         foreach (var path in HidPaths(receiver))
         {
@@ -29,27 +29,29 @@ internal static class ReceiverBattery
             if (metadata.IsInvalid || !MatchesReceiver(metadata, isMouse))
                 continue;
 
+            string model = isMouse ? "MCHOSE A5" : "MCHOSE 无线键盘";
             using var device = Open(path, 0xC0000000, isMouse ? 0 : Overlapped);
             if (device.IsInvalid)
-                return (null, null);
+                return (null, model, null);
 
             try
             {
-                var percent = isMouse ? await ReadMouseAsync(device) : await ReadKeyboardAsync(device);
-                string model = isMouse ? "MCHOSE A5" : "MCHOSE 无线键盘";
-                return (percent, percent.HasValue ? model : null);
+                if (isMouse)
+                {
+                    var reading = await ReadMouseAsync(device);
+                    return (reading?.Percent, model, reading?.IsCharging);
+                }
+
+                // The shared Compx receiver cannot distinguish keyboards with conflicting charge bits.
+                return (await ReadKeyboardAsync(device), model, null);
             }
-            catch (IOException)
+            catch (Exception error) when (error is IOException or OperationCanceledException)
             {
-                return (null, null);
-            }
-            catch (OperationCanceledException)
-            {
-                return (null, null);
+                return (null, model, null);
             }
         }
 
-        return (null, null);
+        return default;
     }
 
     private static IEnumerable<string> HidPaths(uint device)
@@ -116,7 +118,7 @@ internal static class ReceiverBattery
     }
 
     // MCHOSE A5 first-generation feature report, from the community A5 web driver (battery page 0).
-    private static async Task<int?> ReadMouseAsync(SafeFileHandle device)
+    private static async Task<(int Percent, bool IsCharging)?> ReadMouseAsync(SafeFileHandle device)
     {
         var request = new byte[65];
         request[3] = 2;
@@ -129,8 +131,8 @@ internal static class ReceiverBattery
         await Task.Delay(34);
         for (var attempt = 0; attempt < 8; attempt++)
         {
-            if (HidD_GetFeature(device, reply, reply.Length) && ParseMouse(reply) is int percent)
-                return percent;
+            if (HidD_GetFeature(device, reply, reply.Length) && ParseMouse(reply) is { } reading)
+                return reading;
             reply[0] = 0;
             if (attempt == 3 && !HidD_SetFeature(device, request, request.Length))
                 return null;
@@ -159,9 +161,9 @@ internal static class ReceiverBattery
         return null;
     }
 
-    internal static int? ParseMouse(ReadOnlySpan<byte> reply) =>
+    internal static (int Percent, bool IsCharging)? ParseMouse(ReadOnlySpan<byte> reply) =>
         reply.Length == 65 && reply[0] == 0 && reply[1] == 0xA1 && reply[5] == 0 && reply[6] == 0x83 &&
-        reply[8] <= 100 ? reply[8] : null;
+        reply[8] <= 100 ? (reply[8], reply[7] > 0) : null;
 
     internal static int? ParseKeyboard(ReadOnlySpan<byte> reply) =>
         reply.Length == 20 && reply[0] == 0x13 && reply[1] == 0x4A && reply[2] == 1 && reply[3] == 0 &&

@@ -10,6 +10,17 @@ internal static class BatteryRingVisual
     internal const string Green = "#50E65B";
     internal const string Red = "#FF484C";
 
+    internal static string ReadingLabel(BatteryDevice device)
+    {
+        if (device.Percent is not (>= 0 and <= 100))
+            return "未上报电量";
+
+        string kind = device.IsCurrent && device.Percent <= LowThreshold ? "低电量" : "电量";
+        string label = $"{kind} {device.Percent}%";
+        string note = device.ReadingNote;
+        return note.Length > 0 ? $"{label} · {note}" : label;
+    }
+
     internal static (Geometry Arc, string Tone, string Track) Create(int? value) =>
         (BatteryArc(value), value switch { null => "#777777", <= LowThreshold => Red, _ => Green },
             value == 0 ? "#7F2C33" : "#353535");

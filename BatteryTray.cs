@@ -85,8 +85,11 @@ internal sealed class BatteryTray : IDisposable
 
     internal void Update(IReadOnlyList<BatteryDevice> devices)
     {
-        var ordered = devices.OrderBy(device => ValidPercent(device) ?? 101).ToArray();
-        int? lowest = ordered.Length > 0 ? ValidPercent(ordered[0]) : null;
+        var ordered = devices
+            .OrderBy(device => device.IsCurrent ? 0 : device.LastKnownAt.HasValue ? 1 : 2)
+            .ThenBy(device => ValidPercent(device) ?? 101)
+            .ToArray();
+        int? lowest = ordered.FirstOrDefault() is { IsCurrent: true } first ? ValidPercent(first) : null;
         SetPercent(lowest);
 
         string tooltip = lowest is int level ? $"外设电量 · 最低 {level}%" : Program.Name;
@@ -101,6 +104,9 @@ internal sealed class BatteryTray : IDisposable
             if (name.Length > 35)
                 name = name[..(char.IsHighSurrogate(name[33]) ? 33 : 34)] + "…";
             string suffix = ValidPercent(device) is int percent ? $"{percent}%" : "未上报电量";
+            string note = device.ReadingNote;
+            if (note.Length > 0)
+                suffix += $" · {note}";
             string line = $"\n{name} · {connection} · {suffix}";
             int skipped = ordered.Length - i;
             string remaining = $"\n另有 {skipped} 台设备";

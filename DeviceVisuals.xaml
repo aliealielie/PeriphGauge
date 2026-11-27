@@ -21,6 +21,10 @@
             </Grid>
         </Viewbox>
         <ControlTemplate.Triggers>
+            <DataTrigger Binding="{Binding IsHistorical}" Value="True">
+                <Setter TargetName="RingTrack" Property="Stroke" Value="#2B2B2B" />
+                <Setter TargetName="RingArc" Property="Stroke" Value="#777777" />
+            </DataTrigger>
             <DataTrigger Binding="{Binding Kind}" Value="keyboard">
                 <Setter TargetName="Glyph" Property="Data" Value="{StaticResource GlyphKeyboard}" />
             </DataTrigger>

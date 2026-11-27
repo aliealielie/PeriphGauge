@@ -13,6 +13,15 @@
                 <ResourceDictionary Source="DeviceVisuals.xaml" />
             </ResourceDictionary.MergedDictionaries>
             <DropShadowEffect x:Key="SurfaceShadow" Color="#000000" BlurRadius="13" ShadowDepth="2" Opacity="0.72" />
+            <Style x:Key="ReadingNoteText" TargetType="TextBlock">
+                <Setter Property="Foreground" Value="#B6B6B6" />
+                <Setter Property="FontSize" Value="9" />
+                <Style.Triggers>
+                    <Trigger Property="Text" Value="">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
             <Style x:Key="PanelControl" TargetType="Button">
                 <Setter Property="Width" Value="20" />
                 <Setter Property="Height" Value="22" />
@@ -102,14 +111,28 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" ToolTip="{Binding Description}"
-                                            AutomationProperties.Name="{Binding Description}">
-                                    <ContentControl Template="{StaticResource DeviceRing}" Focusable="False"
-                                                    Width="39" Height="39"
-                                                    Margin="0,0,3,0" VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding Battery}" Foreground="{Binding BatteryTone}"
-                                               FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                </StackPanel>
+                                <Grid HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="{Binding Description}"
+                                      AutomationProperties.Name="{Binding Description}">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                        <ContentControl x:Name="CompactRing" Template="{StaticResource DeviceRing}"
+                                                        Focusable="False" Width="32" Height="32"
+                                                        Margin="0,0,3,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding Battery}" Foreground="{Binding BatteryTone}"
+                                                   FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Row="1" Text="{Binding ReadingNote}" Style="{StaticResource ReadingNoteText}"
+                                               FontSize="10" HorizontalAlignment="Center" />
+                                </Grid>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding ReadingNote}" Value="">
+                                        <Setter TargetName="CompactRing" Property="Width" Value="39" />
+                                        <Setter TargetName="CompactRing" Property="Height" Value="39" />
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -214,7 +237,7 @@
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="46" />
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="48" />
+                                        <ColumnDefinition Width="Auto" MinWidth="48" />
                                     </Grid.ColumnDefinitions>
                                     <Border x:Name="Divider" Grid.ColumnSpan="3" Height="1" Background="#353535"
                                             VerticalAlignment="Top" Visibility="Collapsed" />
@@ -233,9 +256,13 @@
                                                        VerticalAlignment="Center" />
                                         </StackPanel>
                                     </StackPanel>
-                                    <TextBlock Grid.Column="2" Text="{Binding Battery}" Foreground="{Binding BatteryTone}"
-                                               FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center"
-                                               HorizontalAlignment="Right" AutomationProperties.Name="{Binding BatteryLabel}" />
+                                    <StackPanel Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Battery}" Foreground="{Binding BatteryTone}"
+                                                   FontSize="17" FontWeight="SemiBold" TextAlignment="Right"
+                                                   AutomationProperties.Name="{Binding BatteryLabel}" />
+                                        <TextBlock Text="{Binding ReadingNote}" Style="{StaticResource ReadingNoteText}"
+                                                   Margin="0,2,0,0" TextAlignment="Right" />
+                                    </StackPanel>
                                 </Grid>
                                 <DataTemplate.Triggers>
                                     <DataTrigger Binding="{Binding HasDivider}" Value="True">

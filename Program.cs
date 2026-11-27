@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -32,7 +31,8 @@ internal static class Program
                     device.Name,
                     device.Kind,
                     device.Connection,
-                    device.Percent
+                    device.Percent,
+                    device.IsCharging
                 });
                 using var output = new FileStream(args[1], FileMode.CreateNew);
                 JsonSerializer.Serialize(output, report, new JsonSerializerOptions { WriteIndented = true });
@@ -55,7 +55,7 @@ internal static class Program
             var preview = new MainWindow { IsPreview = true, AllowClose = true, ShowInTaskbar = true };
             preview.SetDevices(
             [
-                new BatteryDevice("a5", "MCHOSE A5", "mouse", "2.4G 接收器", 46),
+                new BatteryDevice("a5", "MCHOSE A5", "mouse", "2.4G 接收器", 46, IsCharging: true),
                 new BatteryDevice("k99", "MCHOSE K99", "keyboard", "2.4G 接收器", 82),
                 new BatteryDevice("headphones", "SIMGOT EH500", "headphones", "蓝牙", 18)
             ], DateTime.Now);
@@ -165,6 +165,7 @@ internal static class Program
             app.Shutdown();
         };
 
+        var history = new BatteryHistory();
         bool reading = false;
         async Task RefreshAsync(bool showScanning)
         {
@@ -176,7 +177,7 @@ internal static class Program
             reading = true;
             try
             {
-                List<BatteryDevice> devices = await Task.Run(BatteryReader.Read);
+                var devices = await Task.Run(() => history.ReadAsync(BatteryReader.ReadAsync, () => DateTimeOffset.UtcNow));
                 if (app.Dispatcher.HasShutdownStarted)
                     return;
 

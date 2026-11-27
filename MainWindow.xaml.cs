@@ -65,8 +65,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        int known = devices.Count(device => device.Percent is >= 0 and <= 100);
-        Summary.Text = $"{devices.Count} 台设备 · {known} 台有电量";
+        int current = devices.Count(device => device.IsCurrent);
+        Summary.Text = $"{devices.Count} 台设备 · 本次读到 {current} 台电量";
         DeviceItems.ItemsSource = devices
             .GroupBy(device => device.Connection)
             .OrderBy(group => group.Key == "蓝牙" ? 0 : 1)
@@ -240,29 +240,26 @@ public partial class MainWindow : Window
         };
 
         int? value = device.Percent is >= 0 and <= 100 ? device.Percent : null;
-        string detail = value switch
+        string readingNote = device.ReadingNote;
+        string detail = readingNote.Length > 0 ? $"{kindLabel} · {readingNote}" : value switch
         {
             null => $"{kindLabel} · 未上报电量",
             <= BatteryRingVisual.LowThreshold => $"{kindLabel} · 低电量",
             _ => kindLabel
         };
         var (ringArc, ringTone, ringTrack) = BatteryRingVisual.Create(value);
-        return new DeviceRow(device.Name, device.Kind, detail, value, ringArc, ringTone, ringTrack);
+        return new DeviceRow(device.Name, device.Kind, detail, value, BatteryRingVisual.ReadingLabel(device), device.LastKnownAt.HasValue,
+            ringArc, ringTone, ringTrack);
     }
 
     private sealed record DeviceGroup(string Name, Geometry Icon, DeviceRow[] Rows);
 
     private sealed record DeviceRow(
-        string Name, string Kind, string Detail, int? Value, Geometry RingArc, string RingTone, string RingTrack)
+        string Name, string Kind, string Detail, int? Value, string BatteryLabel, bool IsHistorical,
+        Geometry RingArc, string RingTone, string RingTrack)
     {
         public string Battery => Value is int percent ? $"{percent}%" : "—";
-        public string BatteryTone => Value.HasValue ? "#FFFFFF" : "#969696";
-        public string BatteryLabel => Value switch
-        {
-            null => "未上报电量",
-            <= BatteryRingVisual.LowThreshold => $"低电量 {Battery}",
-            _ => $"电量 {Battery}"
-        };
+        public string BatteryTone => IsHistorical ? "#B6B6B6" : Value.HasValue ? "#FFFFFF" : "#969696";
     }
 
     [StructLayout(LayoutKind.Sequential)]

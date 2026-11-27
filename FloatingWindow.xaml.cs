@@ -380,24 +380,23 @@ public partial class FloatingWindow : Window
     private static DeviceRow ToRow(BatteryDevice device, bool hasDivider)
     {
         int? value = device.Percent is >= 0 and <= 100 ? device.Percent : null;
-        string batteryLabel = value switch
-        {
-            null => "电量未知",
-            <= BatteryRingVisual.LowThreshold => $"低电量 {value}%",
-            _ => $"电量 {value}%"
-        };
+        string readingNote = device.ReadingNote;
+        bool isHistorical = device.LastKnownAt.HasValue;
+        string battery = value is int percent ? $"{percent}%" : "—";
+        string batteryLabel = BatteryRingVisual.ReadingLabel(device);
+
         string connection = device.Connection == "2.4G 接收器" ? "2.4 GHz 接收器" : device.Connection;
         var (ringArc, ringTone, ringTrack) = BatteryRingVisual.Create(value);
-        return new DeviceRow(device.Name, device.Kind, connection, hasDivider,
-            value is int level ? $"{level}%" : "—",
-            value.HasValue ? "#FFFFFF" : "#969696",
-            batteryLabel, $"{device.Name} · {connection} · {batteryLabel}",
+        return new DeviceRow(device.Name, device.Kind, connection, hasDivider, battery,
+            isHistorical ? "#B6B6B6" : value.HasValue ? "#FFFFFF" : "#969696",
+            readingNote, isHistorical, batteryLabel, $"{device.Name} · {connection} · {batteryLabel}",
             ringArc, ringTone, ringTrack);
     }
 
     private sealed record DeviceRow(
         string Name, string Kind, string Connection, bool HasDivider, string Battery, string BatteryTone,
-        string BatteryLabel, string Description, Geometry RingArc, string RingTone, string RingTrack);
+        string ReadingNote, bool IsHistorical, string BatteryLabel, string Description,
+        Geometry RingArc, string RingTone, string RingTrack);
 
     private sealed record PointerPress(UIElement Handle, DrawingPoint Cursor, DrawingPoint WindowOrigin);
 

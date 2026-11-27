@@ -12,7 +12,15 @@ using Windows.Storage.Streams;
 
 namespace WirelessBattery;
 
-internal sealed record BatteryDevice(string Id, string Name, string Kind, string Connection, int? Percent);
+internal sealed record BatteryDevice(string Id, string Name, string Kind, string Connection, int? Percent,
+    bool? IsCharging = null, DateTimeOffset? LastKnownAt = null)
+{
+    internal bool IsCurrent => Percent is >= 0 and <= 100 && LastKnownAt is null;
+
+    internal string ReadingNote => LastKnownAt is { } last
+        ? $"上次 {last.ToLocalTime():HH:mm}"
+        : IsCurrent && IsCharging == true ? "充电中" : string.Empty;
+}
 
 internal static class BatteryReader
 {
@@ -182,7 +190,7 @@ internal static class BatteryReader
             if (!isWireless || (!isMchoseMouse && !HasHidInterface(id, node, instanceIds)))
                 continue;
 
-            var (level, model) = await ReceiverBattery.ReadAsync(id).ConfigureAwait(false);
+            var (level, model, isCharging) = await ReceiverBattery.ReadAsync(id).ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(model))
                 name = model;
             else if (isMchoseMouse)
@@ -191,7 +199,7 @@ internal static class BatteryReader
                 name = "2.4G 无线接收器";
 
             devices.Add(new BatteryDevice(id, name, isMchoseMouse ? "mouse" : DeviceKind(name, ReadText(node, Category)),
-                is24GHz ? "2.4G 接收器" : "USB 无线接收器", level is >= 0 and <= 100 ? level : null));
+                is24GHz ? "2.4G 接收器" : "USB 无线接收器", level, isCharging));
         }
         return devices.ToArray();
     }
