@@ -43,13 +43,15 @@ try {
     $widget.IsHitTestVisible = $false
     $invisible = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 0, [System.Windows.Duration]::new([TimeSpan]::Zero))
     $widget.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $invisible)
-    $state = @{ HideRequests = 0; ExpansionChanges = 0; Placements = [Collections.Generic.List[string]]::new() }
+    $state = @{ HideRequests = 0; ExpansionChanges = 0; Refreshes = 0; Placements = [Collections.Generic.List[string]]::new() }
     $hide = [EventHandler]({
         param($sender, $eventArgs)
         $state.HideRequests++
         $sender.Hide()
     }.GetNewClosure())
     $type.GetEvent('HideRequested', $members).GetAddMethod($true).Invoke($widget, @($hide))
+    $refresh = [EventHandler]({ $state.Refreshes++ }.GetNewClosure())
+    $type.GetEvent('RefreshRequested', $members).GetAddMethod($true).Invoke($widget, @($refresh))
     $expansion = [EventHandler[bool]]({
         param($sender, $expanded)
         $state.ExpansionChanges++
@@ -136,12 +138,34 @@ try {
         throw "Unexpected preferences changed while docking and restoring: $($state.Placements -join ',')."
     }
 
+    $deviceType = $assembly.GetType('WirelessBattery.BatteryDevice', $true)
+    function Set-TestReading($LastKnownAt) {
+        $rows = [Array]::CreateInstance($deviceType, 1)
+        $row = [Activator]::CreateInstance($deviceType, [object[]]@('test', '测试键盘', 'keyboard', '蓝牙', 45, $null, $LastKnownAt))
+        $rows.SetValue($row, 0)
+        $type.GetMethod('SetDevices', $members).Invoke($widget, (, $rows))
+    }
+
+    Set-TestReading ([DateTimeOffset]::Now)
+    Open-TestWidget $null $false 'None'
+    Click-WidgetButton $compact
+    Click-WidgetButton ($widget.FindName('CollapseButton'))
+    Click-WidgetButton $compact
+    Click-WidgetButton $dockButton
+    if ($state.Refreshes -ne 2) { throw 'Each opening with a historical reading must refresh once.' }
+    Click-WidgetButton $dockHandle
+    if ($state.Refreshes -ne 3) { throw 'Restoring a docked historical reading must refresh.' }
+    Set-TestReading $null
+    Click-WidgetButton ($widget.FindName('CollapseButton'))
+    Click-WidgetButton $compact
+    if ($state.Refreshes -ne 3) { throw 'Opening current readings should not refresh.' }
+
     Send-WidgetMessage 0x0112 0xF060       # WM_SYSCOMMAND / SC_CLOSE
     if ($state.HideRequests -ne 1 -or $widget.IsVisible) {
         throw 'Explicit system close did not produce exactly one user hide.'
     }
 
-    'Widget close and edge docking smoke passed.'
+    'Widget close, edge docking and refresh-on-open smoke passed.'
 }
 finally {
     $type.GetProperty('AllowClose', $members).SetValue($widget, $true)

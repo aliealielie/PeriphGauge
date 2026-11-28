@@ -22,6 +22,7 @@ public partial class MainWindow : Window
     internal event EventHandler? WidgetToggleRequested;
     internal event EventHandler? StartupToggleRequested;
     internal event EventHandler? TopmostToggleRequested;
+    internal event EventHandler? LowBatteryAlertsToggleRequested;
     internal event EventHandler? DesktopShortcutRequested;
     internal bool AllowClose { get; set; }
     internal bool IsPreview { get; set; }
@@ -79,7 +80,7 @@ public partial class MainWindow : Window
         Placeholder.Visibility = Visibility.Collapsed;
     }
 
-    internal void SetOptions(bool widgetVisible, bool startsWithWindows, bool widgetTopmost)
+    internal void SetOptions(bool widgetVisible, bool startsWithWindows, bool widgetTopmost, bool lowBatteryAlerts)
     {
         syncingOptions = true;
         try
@@ -87,6 +88,7 @@ public partial class MainWindow : Window
             WidgetOption.IsChecked = widgetVisible;
             StartupOption.IsChecked = startsWithWindows;
             TopmostOption.IsChecked = widgetTopmost;
+            LowBatteryAlertsOption.IsChecked = lowBatteryAlerts;
         }
         finally
         {
@@ -176,6 +178,12 @@ public partial class MainWindow : Window
     {
         if (!syncingOptions && !IsPreview)
             TopmostToggleRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void LowBatteryAlertsChanged(object sender, RoutedEventArgs e)
+    {
+        if (!syncingOptions && !IsPreview)
+            LowBatteryAlertsToggleRequested?.Invoke(this, EventArgs.Empty);
     }
 
     private void DesktopShortcutClick(object sender, RoutedEventArgs e) => DesktopShortcutRequested?.Invoke(this, EventArgs.Empty);

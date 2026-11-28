@@ -181,6 +181,8 @@
                                       Style="{StaticResource OptionsMenuItem}" Checked="TopmostChanged" Unchecked="TopmostChanged" />
                             <MenuItem x:Name="StartupOption" Header="开机自启动" IsCheckable="True"
                                       Style="{StaticResource OptionsMenuItem}" Checked="StartupChanged" Unchecked="StartupChanged" />
+                            <MenuItem x:Name="LowBatteryAlertsOption" Header="低电量提醒" IsCheckable="True"
+                                      Style="{StaticResource OptionsMenuItem}" Checked="LowBatteryAlertsChanged" Unchecked="LowBatteryAlertsChanged" />
                             <MenuItem Header="创建桌面快捷方式" Style="{StaticResource OptionsMenuItem}"
                                       Click="DesktopShortcutClick" />
                         </ContextMenu>

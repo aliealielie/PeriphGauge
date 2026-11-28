@@ -14,13 +14,14 @@ internal static class WidgetSettings
     private const string Location = "WidgetLocation";
     private const string Topmost = "WidgetTopmost";
     private const string Expanded = "WidgetExpanded";
+    private const string LowBatteryAlerts = "LowBatteryAlerts";
 
-    internal static (bool Visible, Point? Position, bool Topmost, bool Expanded, DockEdge Edge) Load()
+    internal static (bool Visible, Point? Position, bool Topmost, bool Expanded, DockEdge Edge, bool LowBatteryAlerts) Load()
     {
         using var key = Registry.CurrentUser.OpenSubKey(KeyPath);
         var (position, edge) = ParsePlacement(key?.GetValue(Location) as string);
         return (key?.GetValue(Visible) is 1, position,
-            key?.GetValue(Topmost) is not 0, key?.GetValue(Expanded) is 1, edge);
+            key?.GetValue(Topmost) is not 0, key?.GetValue(Expanded) is 1, edge, key?.GetValue(LowBatteryAlerts) is not 0);
     }
 
     private static (Point? Position, DockEdge Edge) ParsePlacement(string? coordinates)
@@ -45,6 +46,7 @@ internal static class WidgetSettings
     internal static void SetVisible(bool visible) => SetFlag(Visible, visible);
     internal static void SetTopmost(bool topmost) => SetFlag(Topmost, topmost);
     internal static void SetExpanded(bool expanded) => SetFlag(Expanded, expanded);
+    internal static void SetLowBatteryAlerts(bool enabled) => SetFlag(LowBatteryAlerts, enabled);
 
     private static void SetFlag(string name, bool enabled)
     {

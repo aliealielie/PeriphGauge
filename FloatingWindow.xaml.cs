@@ -25,10 +25,12 @@ public partial class FloatingWindow : Window
     private DrawingPoint? preferredLocation;
     private PointerPress? pointerPress;
     private bool isExpanded;
+    private bool hasHistoricalReadings;
     private DockEdge dockEdge;
     private bool dragging;
 
     internal event EventHandler? HideRequested;
+    internal event EventHandler? RefreshRequested;
     internal event EventHandler<bool>? ExpansionChangedByUser;
     internal event EventHandler<(DrawingPoint Position, DockEdge Edge)>? PlacementChangedByUser;
     internal bool AllowClose { get; set; }
@@ -42,6 +44,7 @@ public partial class FloatingWindow : Window
     internal void SetDevices(IReadOnlyList<BatteryDevice> devices)
     {
         var rows = devices.Select((device, index) => ToRow(device, index > 0)).ToArray();
+        hasHistoricalReadings = rows.Any(row => row.IsHistorical);
         DeviceCount.Text = $"{rows.Length} 台";
         DeviceItems.ItemsSource = rows;
         CompactItems.ItemsSource = rows
@@ -57,6 +60,7 @@ public partial class FloatingWindow : Window
 
     internal void SetError()
     {
+        hasHistoricalReadings = false;
         DeviceCount.Text = string.Empty;
         DeviceItems.ItemsSource = null;
         CompactItems.ItemsSource = null;
@@ -146,12 +150,22 @@ public partial class FloatingWindow : Window
     {
         var screen = Screen.FromHandle(new WindowInteropHelper(this).Handle);
         SavePlacement(preferredLocation ?? screen.WorkingArea.Location, DockEdge.None, screen);
+        RefreshHistoricalReadings();
     }
 
     private void SetExpandedByUser(bool expanded)
     {
-        if (SetView(expanded, DockEdge.None))
-            ExpansionChangedByUser?.Invoke(this, expanded);
+        if (!SetView(expanded, DockEdge.None))
+            return;
+        ExpansionChangedByUser?.Invoke(this, expanded);
+        if (expanded)
+            RefreshHistoricalReadings();
+    }
+
+    private void RefreshHistoricalReadings()
+    {
+        if (hasHistoricalReadings)
+            RefreshRequested?.Invoke(this, EventArgs.Empty);
     }
 
     private bool SetView(bool expanded, DockEdge edge, bool animate = true)

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -81,17 +82,18 @@ internal static class Program
         bool widgetTopmost = true;
         bool widgetExpanded = false;
         bool startsWithWindows = false;
+        bool lowBatteryAlerts = true;
         DrawingPoint? widgetPosition = null;
         DockEdge widgetEdge = DockEdge.None;
-        ApplyOption(() => (widgetVisible, widgetPosition, widgetTopmost, widgetExpanded, widgetEdge) = WidgetSettings.Load(),
-            "无法读取悬浮窗设置", showDialog: false);
+        ApplyOption(() => (widgetVisible, widgetPosition, widgetTopmost, widgetExpanded, widgetEdge, lowBatteryAlerts) = WidgetSettings.Load(),
+            "无法读取设置", showDialog: false);
         widget.Topmost = widgetTopmost;
         ApplyOption(() => startsWithWindows = DesktopIntegration.StartsWithWindows, "无法读取自启动状态", showDialog: false);
 
         void ShowOptionState()
         {
-            window.SetOptions(widgetVisible, startsWithWindows, widgetTopmost);
-            tray.SetOptions(widgetVisible, startsWithWindows, widgetTopmost);
+            window.SetOptions(widgetVisible, startsWithWindows, widgetTopmost, lowBatteryAlerts);
+            tray.SetOptions(widgetVisible, startsWithWindows, widgetTopmost, lowBatteryAlerts);
         }
 
         void RestoreWidget()
@@ -126,6 +128,12 @@ internal static class Program
                 startsWithWindows = !startsWithWindows;
             ShowOptionState();
         }
+        void ToggleLowBatteryAlerts(object? sender, EventArgs args)
+        {
+            if (ApplyOption(() => WidgetSettings.SetLowBatteryAlerts(!lowBatteryAlerts), "无法保存低电量提醒设置"))
+                lowBatteryAlerts = !lowBatteryAlerts;
+            ShowOptionState();
+        }
         void CreateShortcut(object? sender, EventArgs args)
         {
             if (ApplyOption(DesktopIntegration.CreateDesktopShortcut, "无法创建桌面快捷方式"))
@@ -143,6 +151,8 @@ internal static class Program
         tray.TopmostToggleRequested += ToggleTopmost;
         window.StartupToggleRequested += ToggleStartup;
         tray.StartupToggleRequested += ToggleStartup;
+        window.LowBatteryAlertsToggleRequested += ToggleLowBatteryAlerts;
+        tray.LowBatteryAlertsToggleRequested += ToggleLowBatteryAlerts;
         window.DesktopShortcutRequested += CreateShortcut;
         tray.DesktopShortcutRequested += CreateShortcut;
         widget.HideRequested += (_, _) => SetWidgetVisibility(false);
@@ -167,57 +177,81 @@ internal static class Program
 
         var history = new BatteryHistory();
         bool reading = false;
-        async Task RefreshAsync(bool showScanning)
+        bool refreshPending = false;
+
+        void Publish(List<BatteryDevice> devices, List<BatteryDevice> newlyLow)
         {
-            if (showScanning)
-                window.SetScanning();
-            if (reading)
+            if (app.Dispatcher.HasShutdownStarted)
                 return;
+            window.SetDevices(devices, DateTime.Now);
+            widget.SetDevices(devices);
+            tray.Update(devices);
+            if (lowBatteryAlerts && newlyLow.Count > 0)
+                tray.ShowLowBatteryAlert(newlyLow);
+        }
 
-            reading = true;
-            try
+        async Task RefreshAsync(bool showScanning = false, bool queueIfBusy = true)
+        {
+            if (reading)
             {
-                var devices = await Task.Run(() => history.ReadAsync(BatteryReader.ReadAsync, () => DateTimeOffset.UtcNow));
-                if (app.Dispatcher.HasShutdownStarted)
-                    return;
-
-                window.SetDevices(devices, DateTime.Now);
-                widget.SetDevices(devices);
-                tray.Update(devices);
+                refreshPending |= queueIfBusy;
+                return;
             }
-            catch (Exception error)
+            do
             {
-                Trace.TraceError(error.ToString());
-                if (!app.Dispatcher.HasShutdownStarted)
+                refreshPending = false;
+                reading = true;
+                try
                 {
-                    window.SetError();
-                    widget.SetError();
-                    tray.ShowError();
+                    if (showScanning)
+                        window.SetScanning();
+                    var scan = await Task.Run(BatteryReader.ScanAsync);
+                    if (app.Dispatcher.HasShutdownStarted)
+                        return;
+                    await history.ApplyAsync(scan.Devices, ids => Task.Run(() => scan.RecheckAsync(ids)),
+                        () => DateTimeOffset.UtcNow, Publish);
                 }
+                catch (Exception error)
+                {
+                    Trace.TraceError(error.ToString());
+                    if (!app.Dispatcher.HasShutdownStarted)
+                    {
+                        window.SetError();
+                        widget.SetError();
+                        tray.ShowError();
+                    }
+                }
+                finally
+                {
+                    reading = false;
+                }
+                showScanning = false;
             }
-            finally
-            {
-                reading = false;
-            }
+            while (refreshPending && !app.Dispatcher.HasShutdownStarted);
         }
 
         window.RefreshRequested += async (_, _) => await RefreshAsync(true);
         tray.RefreshRequested += async (_, _) => await RefreshAsync(true);
+        widget.RefreshRequested += async (_, _) => await RefreshAsync();
         var timer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
-        timer.Tick += async (_, _) => await RefreshAsync(false);
+        timer.Tick += async (_, _) => await RefreshAsync(queueIfBusy: false);
         timer.Start();
 
-        void QueueRestore() => app.Dispatcher.InvokeAsync(RestoreWidget, DispatcherPriority.ContextIdle);
+        void RefreshAfterResume() => app.Dispatcher.InvokeAsync(() =>
+        {
+            RestoreWidget();
+            _ = RefreshAsync();
+        });
         void SessionChanged(object sender, SessionSwitchEventArgs e)
         {
             if (e.Reason is SessionSwitchReason.SessionUnlock or SessionSwitchReason.ConsoleConnect
                 or SessionSwitchReason.RemoteConnect)
-                QueueRestore();
+                RefreshAfterResume();
         }
         void PowerChanged(object sender, PowerModeChangedEventArgs e)
         {
             if (e.Mode == PowerModes.Resume)
-                QueueRestore();
+                RefreshAfterResume();
         }
         SystemEvents.SessionSwitch += SessionChanged;
         SystemEvents.PowerModeChanged += PowerChanged;

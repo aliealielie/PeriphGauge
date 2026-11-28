@@ -6,7 +6,7 @@ namespace WirelessBattery;
 
 internal static class BatteryRingVisual
 {
-    internal const int LowThreshold = 20;
+    internal const int LowThreshold = BatteryHistory.LowThreshold;
     internal const string Green = "#50E65B";
     internal const string Red = "#FF484C";
 

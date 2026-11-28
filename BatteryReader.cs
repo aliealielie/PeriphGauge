@@ -22,11 +22,26 @@ internal sealed record BatteryDevice(string Id, string Name, string Kind, string
         : IsCurrent && IsCharging == true ? "充电中" : string.Empty;
 }
 
+internal sealed class BatteryScan(List<BatteryDevice> devices, Dictionary<string, Func<Task<BatteryDevice?>>> rechecks)
+{
+    internal List<BatteryDevice> Devices { get; } = devices;
+
+    internal async Task<List<BatteryDevice>> RecheckAsync(IReadOnlySet<string> ids)
+    {
+        var tasks = ids.Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(rechecks.ContainsKey)
+            .Select(id => rechecks[id]());
+        var readings = await Task.WhenAll(tasks).ConfigureAwait(false);
+        return readings.OfType<BatteryDevice>().ToList();
+    }
+}
+
 internal static class BatteryReader
 {
     private const string AddressProperty = "System.Devices.Aep.DeviceAddress";
     private const string CategoryProperty = "System.Devices.Aep.Category";
     private const string ContainerProperty = "System.Devices.Aep.ContainerId";
+    private const string ConnectedProperty = "System.Devices.Aep.IsConnected";
     private const uint DevpropByte = 0x03;
     private const uint DevpropGuid = 0x0D;
 
@@ -37,7 +52,10 @@ internal static class BatteryReader
 
     internal static List<BatteryDevice> Read() => ReadAsync().GetAwaiter().GetResult();
 
-    internal static async Task<List<BatteryDevice>> ReadAsync()
+    internal static async Task<List<BatteryDevice>> ReadAsync() =>
+        (await ScanAsync().ConfigureAwait(false)).Devices;
+
+    internal static async Task<BatteryScan> ScanAsync()
     {
         string[] instanceIds = PresentDeviceIds();
         BluetoothNode[] bluetoothNodes = instanceIds
@@ -50,13 +68,15 @@ internal static class BatteryReader
         var bluetooth = ReadBluetoothDevicesAsync(bluetoothNodes);
         var usb = ReadReceiversAsync(instanceIds);
         var results = await Task.WhenAll(bluetooth, usb).ConfigureAwait(false);
-        return results.SelectMany(group => group)
-            .OrderBy(device => device.Connection == "蓝牙" ? 0 : 1)
-            .ThenBy(device => device.Name, StringComparer.CurrentCultureIgnoreCase)
-            .ToList();
+        var readings = results.SelectMany(group => group)
+            .OrderBy(reading => reading.Device.Connection == "蓝牙" ? 0 : 1)
+            .ThenBy(reading => reading.Device.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
+        return new BatteryScan(readings.Select(reading => reading.Device).ToList(),
+            readings.ToDictionary(reading => reading.Device.Id, reading => reading.Recheck, StringComparer.OrdinalIgnoreCase));
     }
 
-    private static async Task<BatteryDevice[]> ReadBluetoothDevicesAsync(BluetoothNode[] nodes)
+    private static async Task<DeviceReading[]> ReadBluetoothDevicesAsync(BluetoothNode[] nodes)
     {
         var le = EnumerateBluetoothAsync(true);
         var classic = EnumerateBluetoothAsync(false);
@@ -65,9 +85,32 @@ internal static class BatteryReader
         var devices = await Task.WhenAll(endpoints.Select(endpoint => ReadEndpointAsync(endpoint, nodes)))
             .ConfigureAwait(false);
 
-        return devices.GroupBy(device => device.Id, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.FirstOrDefault(device => device.Percent.HasValue) ?? group.First())
+        return devices.GroupBy(reading => reading.Device.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var preferred = group.FirstOrDefault(reading => reading.Device.Percent.HasValue) ?? group.First();
+                var alternatives = group.Where(reading => reading != preferred).ToArray();
+                return alternatives.Length == 0
+                    ? preferred
+                    : preferred with { Recheck = () => RecheckBluetoothAliasesAsync(preferred, alternatives) };
+            })
             .ToArray();
+    }
+
+    private static async Task<BatteryDevice?> RecheckBluetoothAliasesAsync(DeviceReading preferred, DeviceReading[] alternatives)
+    {
+        var available = await preferred.Recheck().ConfigureAwait(false);
+        if (available?.Percent is not null)
+            return available;
+
+        foreach (var alias in alternatives)
+        {
+            var reading = await alias.Recheck().ConfigureAwait(false);
+            if (reading?.Percent is not null)
+                return reading;
+            available ??= reading;
+        }
+        return available;
     }
 
     private static async Task<BluetoothEndpoint[]> EnumerateBluetoothAsync(bool isLowEnergy)
@@ -91,7 +134,7 @@ internal static class BatteryReader
         }
     }
 
-    private static async Task<BatteryDevice> ReadEndpointAsync(BluetoothEndpoint endpoint, BluetoothNode[] nodes)
+    private static async Task<DeviceReading> ReadEndpointAsync(BluetoothEndpoint endpoint, BluetoothNode[] nodes)
     {
         var info = endpoint.Info;
         var properties = info.Properties;
@@ -109,34 +152,79 @@ internal static class BatteryReader
             containerId = primaryContainer;
 
         var matchingNodes = nodes.Where(node => containerId != Guid.Empty && node.ContainerId == containerId)
-            .Concat(addressNodes).Distinct();
-        int? windowsLevel = primaryNode?.Level
-            ?? matchingNodes.Select(node => node.Level).FirstOrDefault(level => level.HasValue);
+            .Concat(addressNodes);
+        if (primaryNode is not null)
+            matchingNodes = matchingNodes.Prepend(primaryNode);
+        var batteryNodes = matchingNodes.Distinct().ToArray();
+        int? windowsLevel = batteryNodes.Select(node => node.Level).FirstOrDefault(level => level.HasValue);
         int? gattLevel = endpoint.IsLowEnergy
-            ? await ReadGattBatteryAsync(info.Id).ConfigureAwait(false)
+            ? (await ReadGattBatteryAsync(info.Id).ConfigureAwait(false)).Percent
             : null;
 
         properties.TryGetValue(CategoryProperty, out object? categoryValue);
         string categories = $"{string.Join(' ', categoryValue as string[] ?? [])} {primaryNode?.Category}";
         string stableId = containerId != Guid.Empty ? containerId.ToString() : address;
-        return new BatteryDevice($"bluetooth:{(stableId.Length > 0 ? stableId : info.Id)}",
+        var device = new BatteryDevice($"bluetooth:{(stableId.Length > 0 ? stableId : info.Id)}",
             info.Name.Trim(), DeviceKind(info.Name, categories), "蓝牙", gattLevel ?? windowsLevel);
+        string[] batteryNodeIds = batteryNodes.Select(node => node.Id).ToArray();
+        string endpointId = info.Id;
+        bool isLowEnergy = endpoint.IsLowEnergy;
+        return new DeviceReading(device, () => RecheckBluetoothAsync(device, endpointId, isLowEnergy, batteryNodeIds));
     }
 
-    private static async Task<int?> ReadGattBatteryAsync(string id)
+    private static async Task<BatteryDevice?> RecheckBluetoothAsync(BatteryDevice previous,
+        string endpointId, bool isLowEnergy, string[] batteryNodeIds)
+    {
+        (int? percent, bool? connected) = isLowEnergy
+            ? await ReadGattBatteryAsync(endpointId).ConfigureAwait(false)
+            : (null, await IsBluetoothConnectedAsync(endpointId).ConfigureAwait(false));
+        if (connected == false)
+            return null;
+
+        if (connected == true)
+        {
+            percent ??= batteryNodeIds
+                .Select(id => Locate(id, out uint node) ? ReadBatteryLevel(node) : null)
+                .FirstOrDefault(level => level.HasValue);
+        }
+        return previous with { Percent = percent };
+    }
+
+    private static async Task<bool?> IsBluetoothConnectedAsync(string id)
+    {
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var device = await DeviceInformation.CreateFromIdAsync(id, [ConnectedProperty], DeviceInformationKind.AssociationEndpoint)
+                .AsTask(timeout.Token).ConfigureAwait(false);
+            return device is not null && device.Properties.TryGetValue(ConnectedProperty, out var connected)
+                ? connected as bool?
+                : null;
+        }
+        catch (Exception ex) when (ex is COMException or UnauthorizedAccessException or OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
+    private static async Task<(int? Percent, bool? Connected)> ReadGattBatteryAsync(string id)
     {
         int? level = null;
+        bool? connected = null;
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             using var device = await BluetoothLEDevice.FromIdAsync(id).AsTask(timeout.Token).ConfigureAwait(false);
-            if (device is null || device.ConnectionStatus != BluetoothConnectionStatus.Connected)
-                return null;
+            if (device is null)
+                return (null, null);
+            connected = device.ConnectionStatus == BluetoothConnectionStatus.Connected;
+            if (connected == false)
+                return (null, false);
 
             var services = await device.GetGattServicesForUuidAsync(GattServiceUuids.Battery, BluetoothCacheMode.Cached)
                 .AsTask(timeout.Token).ConfigureAwait(false);
             if (services.Status != GattCommunicationStatus.Success)
-                return null;
+                return (null, connected);
 
             try
             {
@@ -170,12 +258,12 @@ internal static class BatteryReader
         {
             // A device can go to sleep or disconnect between enumeration and the GATT read.
         }
-        return level;
+        return (level, connected);
     }
 
-    private static async Task<BatteryDevice[]> ReadReceiversAsync(string[] instanceIds)
+    private static async Task<DeviceReading[]> ReadReceiversAsync(string[] instanceIds)
     {
-        var devices = new List<BatteryDevice>();
+        var devices = new List<DeviceReading>();
         foreach (string id in instanceIds)
         {
             if (!StartsWith(id, @"USB\VID_") || Contains(id, "&MI_") || !Locate(id, out uint node))
@@ -198,10 +286,20 @@ internal static class BatteryReader
             else if (Contains(name, "2.4G Wireless Receiver"))
                 name = "2.4G 无线接收器";
 
-            devices.Add(new BatteryDevice(id, name, isMchoseMouse ? "mouse" : DeviceKind(name, ReadText(node, Category)),
-                is24GHz ? "2.4G 接收器" : "USB 无线接收器", level, isCharging));
+            var device = new BatteryDevice(id, name, isMchoseMouse ? "mouse" : DeviceKind(name, ReadText(node, Category)),
+                is24GHz ? "2.4G 接收器" : "USB 无线接收器", level, isCharging);
+            devices.Add(new DeviceReading(device, () => RecheckReceiverAsync(device)));
         }
         return devices.ToArray();
+    }
+
+    private static async Task<BatteryDevice?> RecheckReceiverAsync(BatteryDevice previous)
+    {
+        if (!Locate(previous.Id, out _))
+            return null;
+
+        var (level, _, isCharging) = await ReceiverBattery.ReadAsync(previous.Id).ConfigureAwait(false);
+        return Locate(previous.Id, out _) ? previous with { Percent = level, IsCharging = isCharging } : null;
     }
 
     private static bool HasHidInterface(string id, uint node, string[] instanceIds)
@@ -237,9 +335,13 @@ internal static class BatteryReader
     {
         if (!Locate(id, out uint node))
             return null;
+        return new BluetoothNode(id, ReadContainer(node), ReadText(node, Category), ReadBatteryLevel(node));
+    }
+
+    private static int? ReadBatteryLevel(uint node)
+    {
         byte[]? battery = ReadProperty(node, Battery, 1, DevpropByte);
-        return new BluetoothNode(id, ReadContainer(node), ReadText(node, Category),
-            battery is [<= 100] ? battery[0] : null);
+        return battery is [<= 100] ? battery[0] : null;
     }
 
     private static Guid ReadContainer(uint node)
@@ -300,6 +402,8 @@ internal static class BatteryReader
     private sealed record BluetoothEndpoint(DeviceInformation Info, bool IsLowEnergy);
 
     private sealed record BluetoothNode(string Id, Guid ContainerId, string Category, int? Level);
+
+    private sealed record DeviceReading(BatteryDevice Device, Func<Task<BatteryDevice?>> Recheck);
 
     [StructLayout(LayoutKind.Sequential)]
     private readonly struct PropertyKey(string format, uint id)

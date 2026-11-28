@@ -17,6 +17,7 @@ internal sealed class BatteryTray : IDisposable
     private readonly Forms.ToolStripMenuItem widgetItem;
     private readonly Forms.ToolStripMenuItem topmostItem;
     private readonly Forms.ToolStripMenuItem startupItem;
+    private readonly Forms.ToolStripMenuItem lowBatteryAlertsItem;
     private readonly Icon baseIcon;
     private Icon? batteryIcon;
     private int? displayedPercent;
@@ -26,6 +27,7 @@ internal sealed class BatteryTray : IDisposable
     internal event EventHandler? WidgetToggleRequested;
     internal event EventHandler? TopmostToggleRequested;
     internal event EventHandler? StartupToggleRequested;
+    internal event EventHandler? LowBatteryAlertsToggleRequested;
     internal event EventHandler? DesktopShortcutRequested;
     internal event EventHandler? ExitRequested;
 
@@ -56,9 +58,12 @@ internal sealed class BatteryTray : IDisposable
         topmostItem.Click += (_, _) => TopmostToggleRequested?.Invoke(this, EventArgs.Empty);
         startupItem = new Forms.ToolStripMenuItem("开机自启动");
         startupItem.Click += (_, _) => StartupToggleRequested?.Invoke(this, EventArgs.Empty);
+        lowBatteryAlertsItem = new Forms.ToolStripMenuItem("低电量提醒");
+        lowBatteryAlertsItem.Click += (_, _) => LowBatteryAlertsToggleRequested?.Invoke(this, EventArgs.Empty);
         menu.Items.Add(widgetItem);
         menu.Items.Add(topmostItem);
         menu.Items.Add(startupItem);
+        menu.Items.Add(lowBatteryAlertsItem);
         menu.Items.Add("创建桌面快捷方式", null, (_, _) => DesktopShortcutRequested?.Invoke(this, EventArgs.Empty));
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => ExitRequested?.Invoke(this, EventArgs.Empty));
@@ -67,8 +72,11 @@ internal sealed class BatteryTray : IDisposable
             Icon = baseIcon,
             Text = "外设电量\n正在读取电量…",
             ContextMenuStrip = menu,
+            BalloonTipTitle = "外设电量 · 低电量提醒",
+            BalloonTipIcon = Forms.ToolTipIcon.Warning,
             Visible = true
         };
+        notifyIcon.BalloonTipClicked += (_, _) => OpenRequested?.Invoke(this, null);
         notifyIcon.MouseClick += (_, click) =>
         {
             if (click.Button == Forms.MouseButtons.Left)
@@ -76,11 +84,26 @@ internal sealed class BatteryTray : IDisposable
         };
     }
 
-    internal void SetOptions(bool widgetVisible, bool startsWithWindows, bool widgetTopmost)
+    internal void SetOptions(bool widgetVisible, bool startsWithWindows, bool widgetTopmost, bool lowBatteryAlerts)
     {
         widgetItem.Checked = widgetVisible;
         topmostItem.Checked = widgetTopmost;
         startupItem.Checked = startsWithWindows;
+        lowBatteryAlertsItem.Checked = lowBatteryAlerts;
+    }
+
+    internal void ShowLowBatteryAlert(IReadOnlyList<BatteryDevice> devices)
+    {
+        if (devices.Count == 0)
+            return;
+
+        const int visibleDevices = 3;
+        string text = string.Join("\n", devices.Take(visibleDevices)
+            .Select(device => $"{ShortDeviceName(device.Name)} 剩余 {device.Percent}%"));
+        if (devices.Count > visibleDevices)
+            text += $"\n另有 {devices.Count - visibleDevices} 台设备电量较低";
+        notifyIcon.BalloonTipText = text;
+        notifyIcon.ShowBalloonTip(5000);
     }
 
     internal void Update(IReadOnlyList<BatteryDevice> devices)
@@ -100,9 +123,7 @@ internal sealed class BatteryTray : IDisposable
         {
             var device = ordered[i];
             string connection = device.Connection == "2.4G 接收器" ? "2.4G" : device.Connection;
-            string name = device.Name.Replace('\r', ' ').Replace('\n', ' ');
-            if (name.Length > 35)
-                name = name[..(char.IsHighSurrogate(name[33]) ? 33 : 34)] + "…";
+            string name = ShortDeviceName(device.Name);
             string suffix = ValidPercent(device) is int percent ? $"{percent}%" : "未上报电量";
             string note = device.ReadingNote;
             if (note.Length > 0)
@@ -119,6 +140,12 @@ internal sealed class BatteryTray : IDisposable
             tooltip += line;
         }
         notifyIcon.Text = tooltip;
+    }
+
+    private static string ShortDeviceName(string name)
+    {
+        name = name.Replace('\r', ' ').Replace('\n', ' ');
+        return name.Length > 35 ? name[..(char.IsHighSurrogate(name[33]) ? 33 : 34)] + "…" : name;
     }
 
     private static int? ValidPercent(BatteryDevice device) => device.Percent is >= 0 and <= 100 ? device.Percent : null;

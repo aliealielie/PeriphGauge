@@ -8,83 +8,92 @@ namespace WirelessBattery;
 
 internal sealed class BatteryHistory
 {
+    internal const int LowThreshold = 20;
     private const int JumpThreshold = 10;
     private const int ConfirmationTolerance = 2;
     private static readonly TimeSpan MaxAge = TimeSpan.FromMinutes(10);
     private readonly Dictionary<string, (int Percent, DateTimeOffset At)> latest = new(StringComparer.OrdinalIgnoreCase);
 
-    internal async Task<List<BatteryDevice>> ReadAsync(Func<Task<List<BatteryDevice>>> read, Func<DateTimeOffset> now)
+    internal async Task ApplyAsync(List<BatteryDevice> readings,
+        Func<IReadOnlySet<string>, Task<List<BatteryDevice>>> recheck, Func<DateTimeOffset> now,
+        Action<List<BatteryDevice>, List<BatteryDevice>> publish)
     {
-        var first = (await read().ConfigureAwait(false)).DistinctBy(device => device.Id, StringComparer.OrdinalIgnoreCase).ToArray();
+        var first = readings.DistinctBy(device => device.Id, StringComparer.OrdinalIgnoreCase).ToArray();
         DateTimeOffset firstAt = now();
         var present = first.Select(device => device.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (string id in latest.Keys.Where(id => !present.Contains(id) || !IsRecent(latest[id].At, firstAt)).ToArray())
             latest.Remove(id);
 
-        var jumps = first.Where(device => ValidPercent(device) is int value &&
-                latest.TryGetValue(device.Id, out var previous) && Math.Abs(previous.Percent - value) >= JumpThreshold)
-            .Select(device => device.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var jumps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var devices = new List<BatteryDevice>(first.Length);
+        var low = new List<BatteryDevice>();
+        foreach (var device in first)
+        {
+            int? percent = ValidPercent(device);
+            if (percent is int candidate && latest.TryGetValue(device.Id, out var previous) &&
+                Math.Abs(previous.Percent - candidate) >= JumpThreshold)
+            {
+                jumps.Add(device.Id);
+                percent = null;
+            }
+            devices.Add(Record(device, percent, firstAt, low));
+        }
+        publish(devices, low);
+        if (jumps.Count == 0)
+            return;
 
         Dictionary<string, BatteryDevice>? second = null;
-        DateTimeOffset finishedAt = firstAt;
-        if (jumps.Count > 0)
+        try
         {
-            try
-            {
-                second = (await read().ConfigureAwait(false)).DistinctBy(device => device.Id, StringComparer.OrdinalIgnoreCase)
-                    .ToDictionary(device => device.Id, StringComparer.OrdinalIgnoreCase);
-            }
-            catch (Exception error)
-            {
-                Trace.TraceWarning(error.ToString());
-            }
-            finishedAt = now();
+            second = (await recheck(jumps)).DistinctBy(device => device.Id, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(device => device.Id, StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception error)
+        {
+            Trace.TraceWarning(error.ToString());
         }
 
-        var devices = new List<BatteryDevice>(first.Length);
-        foreach (var firstReading in first)
+        DateTimeOffset finishedAt = now();
+        var updated = new List<BatteryDevice>(first.Length);
+        var confirmedLow = new List<BatteryDevice>();
+        for (int i = 0; i < first.Length; i++)
         {
-            string id = firstReading.Id;
-            BatteryDevice? confirmedReading = null;
-            if (second is not null && !second.TryGetValue(id, out confirmedReading))
+            var device = first[i];
+            if (!jumps.Contains(device.Id))
             {
-                latest.Remove(id);
+                updated.Add(devices[i]);
                 continue;
             }
-
-            BatteryDevice device = firstReading;
-            int? percent = ValidPercent(device);
-            DateTimeOffset sampledAt = firstAt;
-            if (percent is int candidate && jumps.Contains(id))
+            BatteryDevice? reread = null;
+            if (second is not null && !second.TryGetValue(device.Id, out reread))
             {
-                int baseline = latest[id].Percent;
-                percent = null;
-                if (confirmedReading is not null && ValidPercent(confirmedReading) is int confirmed &&
-                    (Math.Abs(confirmed - baseline) < JumpThreshold || Math.Abs(confirmed - candidate) <= ConfirmationTolerance))
-                {
-                    device = confirmedReading;
-                    percent = confirmed;
-                    sampledAt = finishedAt;
-                }
+                latest.Remove(device.Id);
+                continue;
             }
-
-            if (percent is int fresh)
-            {
-                latest[id] = (fresh, sampledAt);
-                devices.Add(device with { Percent = fresh, LastKnownAt = null });
-            }
-            else if (latest.TryGetValue(id, out var previous) && IsRecent(previous.At, finishedAt))
-            {
-                devices.Add(device with { Percent = previous.Percent, IsCharging = null, LastKnownAt = previous.At });
-            }
+            if (reread is not null && ValidPercent(reread) is int confirmed && device.Percent is int candidate &&
+                (Math.Abs(confirmed - latest[device.Id].Percent) < JumpThreshold || Math.Abs(confirmed - candidate) <= ConfirmationTolerance))
+                updated.Add(Record(reread, confirmed, finishedAt, confirmedLow));
             else
-            {
-                latest.Remove(id);
-                devices.Add(device with { Percent = null, IsCharging = null, LastKnownAt = null });
-            }
+                updated.Add(Record(device, null, finishedAt, confirmedLow));
         }
+        publish(updated, confirmedLow);
+    }
 
-        return devices;
+    private BatteryDevice Record(BatteryDevice device, int? percent, DateTimeOffset at, List<BatteryDevice> low)
+    {
+        if (percent is int fresh)
+        {
+            var current = device with { Percent = fresh, LastKnownAt = null };
+            if (fresh <= LowThreshold && latest.TryGetValue(device.Id, out var last) && last.Percent > LowThreshold)
+                low.Add(current);
+            latest[device.Id] = (fresh, at);
+            return current;
+        }
+        if (latest.TryGetValue(device.Id, out var previous) && IsRecent(previous.At, at))
+            return device with { Percent = previous.Percent, IsCharging = null, LastKnownAt = previous.At };
+
+        latest.Remove(device.Id);
+        return device with { Percent = null, IsCharging = null, LastKnownAt = null };
     }
 
     private static int? ValidPercent(BatteryDevice device) => device.Percent is >= 0 and <= 100 ? device.Percent : null;
