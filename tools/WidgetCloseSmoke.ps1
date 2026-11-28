@@ -139,26 +139,39 @@ try {
     }
 
     $deviceType = $assembly.GetType('WirelessBattery.BatteryDevice', $true)
-    function Set-TestReading($LastKnownAt) {
-        $rows = [Array]::CreateInstance($deviceType, 1)
-        $row = [Activator]::CreateInstance($deviceType, [object[]]@('test', '测试键盘', 'keyboard', '蓝牙', 45, $null, $LastKnownAt))
-        $rows.SetValue($row, 0)
+    function Set-TestReading($Percent, $LastKnownAt = $null) {
+        $rows = [Array]::CreateInstance($deviceType, 2)
+        $mouse = [Activator]::CreateInstance($deviceType, [object[]]@('mouse', '测试鼠标', 'mouse', '2.4G 接收器', 80, $null, $null))
+        $row = [Activator]::CreateInstance($deviceType, [object[]]@('test', '测试键盘', 'keyboard', '蓝牙', $Percent, $null, $LastKnownAt))
+        $rows.SetValue($mouse, 0)
+        $rows.SetValue($row, 1)
         $type.GetMethod('SetDevices', $members).Invoke($widget, (, $rows))
     }
 
-    Set-TestReading ([DateTimeOffset]::Now)
-    Open-TestWidget $null $false 'None'
-    Click-WidgetButton $compact
-    Click-WidgetButton ($widget.FindName('CollapseButton'))
-    Click-WidgetButton $compact
-    Click-WidgetButton $dockButton
-    if ($state.Refreshes -ne 2) { throw 'Each opening with a historical reading must refresh once.' }
-    Click-WidgetButton $dockHandle
-    if ($state.Refreshes -ne 3) { throw 'Restoring a docked historical reading must refresh.' }
+    function Assert-RefreshOnOpen([string] $Scenario, [int] $Expected) {
+        $count = $state.Refreshes
+        Open-TestWidget $null $false 'None'
+        Click-WidgetButton $compact
+        if ($state.Refreshes -ne $count + $Expected) { throw "$Scenario - unexpected refresh count on expand." }
+        Click-WidgetButton $dockButton
+        if ($state.Refreshes -ne $count + $Expected) { throw "$Scenario - docking triggered a refresh." }
+        Click-WidgetButton $dockHandle
+        if ($state.Refreshes -ne $count + 2 * $Expected) { throw "$Scenario - unexpected refresh count on undock." }
+        Click-WidgetButton ($widget.FindName('CollapseButton'))
+        if ($state.Refreshes -ne $count + 2 * $Expected) { throw "$Scenario - collapsing triggered a refresh." }
+    }
+
+    Set-TestReading 45 ([DateTimeOffset]::Now)
+    Assert-RefreshOnOpen 'Historical reading' 1
     Set-TestReading $null
-    Click-WidgetButton ($widget.FindName('CollapseButton'))
-    Click-WidgetButton $compact
-    if ($state.Refreshes -ne 3) { throw 'Opening current readings should not refresh.' }
+    Assert-RefreshOnOpen 'Unknown reading' 1
+    Set-TestReading 45
+    Assert-RefreshOnOpen 'Current reading' 0
+    $type.GetMethod('SetError', $members).Invoke($widget, $null)
+    Assert-RefreshOnOpen 'Scan failed' 1
+    $emptyRows = [Array]::CreateInstance($deviceType, 0)
+    $type.GetMethod('SetDevices', $members).Invoke($widget, (, $emptyRows))
+    Assert-RefreshOnOpen 'No devices' 0
 
     Send-WidgetMessage 0x0112 0xF060       # WM_SYSCOMMAND / SC_CLOSE
     if ($state.HideRequests -ne 1 -or $widget.IsVisible) {

@@ -12,13 +12,31 @@ using System.Threading.Tasks;
 
 public static class BatteryReaderRecheckSmoke
 {
-    public static Task Run(Assembly assembly)
+    public static async Task Run(Assembly assembly)
     {
         var device = assembly.GetType("WirelessBattery.BatteryDevice", throwOnError: true)!;
         var scan = assembly.GetType("WirelessBattery.BatteryScan", throwOnError: true)!;
         var reader = assembly.GetType("WirelessBattery.BatteryReader", throwOnError: true)!;
-        return (Task)typeof(BatteryReaderRecheckSmoke).GetMethod(nameof(CheckTargetSelection), BindingFlags.Static | BindingFlags.NonPublic)!
+        await (Task)typeof(BatteryReaderRecheckSmoke).GetMethod(nameof(CheckTargetSelection), BindingFlags.Static | BindingFlags.NonPublic)!
             .MakeGenericMethod(device).Invoke(null, [scan, reader])!;
+        await CheckEnumerationStatus(reader);
+    }
+
+    private static async Task CheckEnumerationStatus(Type reader)
+    {
+        var nodes = Array.CreateInstance(reader.GetNestedType("BluetoothNode", BindingFlags.NonPublic)!, 0);
+        var empty = Array.CreateInstance(reader.GetNestedType("BluetoothEndpoint", BindingFlags.NonPublic)!, 0);
+        var completed = typeof(Task).GetMethod(nameof(Task.FromResult))!.MakeGenericMethod(empty.GetType());
+        var read = reader.GetMethod("ReadBluetoothDevicesAsync", BindingFlags.NonPublic | BindingFlags.Static)!;
+        foreach (var le in new Array?[] { empty, null })
+        foreach (var classic in new Array?[] { empty, null })
+        {
+            var task = (Task)read.Invoke(null, [nodes, completed.Invoke(null, [le]), completed.Invoke(null, [classic])])!;
+            await task;
+            var result = (System.Runtime.CompilerServices.ITuple)task.GetType().GetProperty("Result")!.GetValue(task)!;
+            if (((Array)result[0]!).Length != 0 || (bool)result[1]! != (le is null || classic is null))
+                throw new InvalidOperationException("Bluetooth query failure and a successful empty scan must be distinct.");
+        }
     }
 
     private static async Task CheckTargetSelection<T>(Type scanType, Type readerType) where T : class
@@ -40,7 +58,9 @@ public static class BatteryReaderRecheckSmoke
             ["unrelated"] = Reader("unrelated", Device("unrelated", 72))
         };
         var scan = Activator.CreateInstance(scanType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
-            binder: null, args: [new List<T> { matched, unavailable }, callbacks], culture: null)!;
+            binder: null, args: [new List<T> { matched, unavailable }, callbacks, true], culture: null)!;
+        if (!(bool)scanType.GetProperty("BluetoothScanIncomplete", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(scan)!)
+            throw new InvalidOperationException("Scan omitted incomplete Bluetooth status.");
         var recheck = scanType.GetMethod("RecheckAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var result = await (Task<List<T>>)recheck.Invoke(scan,
         [
@@ -64,7 +84,7 @@ public static class BatteryReaderRecheckSmoke
         object Target(Func<Task<T?>> read) => Activator.CreateInstance(targetType,
             BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, binder: null,
             args: [matched, read], culture: null)!;
-        Task<T?> Recheck(T? preferred, params T?[] alternatives)
+        Task<T?> Recheck(bool incomplete, T? preferred, params T?[] alternatives)
         {
             var targets = Array.CreateInstance(targetType, alternatives.Length);
             for (int i = 0; i < alternatives.Length; i++)
@@ -72,13 +92,15 @@ public static class BatteryReaderRecheckSmoke
                 T? candidate = alternatives[i];
                 targets.SetValue(Target(() => Task.FromResult(candidate)), i);
             }
-            return (Task<T?>)aliases.Invoke(null, [Target(() => Task.FromResult(preferred)), targets])!;
+            return (Task<T?>)aliases.Invoke(null, [Target(() => Task.FromResult(preferred)), targets, incomplete])!;
         }
 
-        if (await Recheck(preferredUnreadable, null, alias) != alias ||
-            await Recheck(preferredUnreadable, null, unreadableAlias) != preferredUnreadable ||
-            await Recheck(null, unreadableAlias) != unreadableAlias ||
-            await Recheck(null, new T?[] { null }) is not null)
+        if (await Recheck(false, preferredUnreadable, null, alias) != alias ||
+            await Recheck(false, preferredUnreadable, null, unreadableAlias) != preferredUnreadable ||
+            await Recheck(false, null, unreadableAlias) != unreadableAlias ||
+            await Recheck(false, null, new T?[] { null }) is not null ||
+            await Recheck(true, null, alias) != alias ||
+            !Equals(await Recheck(true, null, new T?[] { null }), preferredUnreadable))
         {
             throw new InvalidOperationException("Bluetooth aliases did not prefer a measured result or preserve availability.");
         }

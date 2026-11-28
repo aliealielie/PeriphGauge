@@ -179,10 +179,22 @@ internal static class Program
         bool reading = false;
         bool refreshPending = false;
 
-        void Publish(List<BatteryDevice> devices, List<BatteryDevice> newlyLow)
+        void ShowReadError()
+        {
+            window.SetError();
+            widget.SetError();
+            tray.ShowError();
+        }
+
+        void Publish(List<BatteryDevice> devices, List<BatteryDevice> newlyLow, bool bluetoothScanIncomplete)
         {
             if (app.Dispatcher.HasShutdownStarted)
                 return;
+            if (bluetoothScanIncomplete && devices.Count == 0)
+            {
+                ShowReadError();
+                return;
+            }
             window.SetDevices(devices, DateTime.Now);
             widget.SetDevices(devices);
             tray.Update(devices);
@@ -208,18 +220,15 @@ internal static class Program
                     var scan = await Task.Run(BatteryReader.ScanAsync);
                     if (app.Dispatcher.HasShutdownStarted)
                         return;
-                    await history.ApplyAsync(scan.Devices, ids => Task.Run(() => scan.RecheckAsync(ids)),
-                        () => DateTimeOffset.UtcNow, Publish);
+                    await history.ApplyAsync(scan.Devices, scan.BluetoothScanIncomplete,
+                        ids => Task.Run(() => scan.RecheckAsync(ids)), () => DateTimeOffset.UtcNow,
+                        (devices, low) => Publish(devices, low, scan.BluetoothScanIncomplete));
                 }
                 catch (Exception error)
                 {
                     Trace.TraceError(error.ToString());
                     if (!app.Dispatcher.HasShutdownStarted)
-                    {
-                        window.SetError();
-                        widget.SetError();
-                        tray.ShowError();
-                    }
+                        ShowReadError();
                 }
                 finally
                 {

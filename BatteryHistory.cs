@@ -9,20 +9,38 @@ namespace WirelessBattery;
 internal sealed class BatteryHistory
 {
     internal const int LowThreshold = 20;
+    private const int AlertRecoveryLevel = 25;
     private const int JumpThreshold = 10;
     private const int ConfirmationTolerance = 2;
     private static readonly TimeSpan MaxAge = TimeSpan.FromMinutes(10);
-    private readonly Dictionary<string, (int Percent, DateTimeOffset At)> latest = new(StringComparer.OrdinalIgnoreCase);
+    private sealed record Confirmed(BatteryDevice Device, DateTimeOffset At, bool AlertSent)
+    {
+        internal int Percent => Device.Percent!.Value;
+    }
 
-    internal async Task ApplyAsync(List<BatteryDevice> readings,
+    private readonly Dictionary<string, Confirmed> latest = new(StringComparer.OrdinalIgnoreCase);
+
+    internal async Task ApplyAsync(List<BatteryDevice> readings, bool bluetoothScanIncomplete,
         Func<IReadOnlySet<string>, Task<List<BatteryDevice>>> recheck, Func<DateTimeOffset> now,
         Action<List<BatteryDevice>, List<BatteryDevice>> publish)
     {
         var first = readings.DistinctBy(device => device.Id, StringComparer.OrdinalIgnoreCase).ToArray();
         DateTimeOffset firstAt = now();
         var present = first.Select(device => device.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (string id in latest.Keys.Where(id => !present.Contains(id) || !IsRecent(latest[id].At, firstAt)).ToArray())
+        foreach (string id in latest.Keys.Where(id => !IsRecent(latest[id].At, firstAt)).ToArray())
             latest.Remove(id);
+
+        void Publish(List<BatteryDevice> batch, List<BatteryDevice> alerts, DateTimeOffset at)
+        {
+            foreach (var (id, last) in latest.Where(entry => !present.Contains(entry.Key)).ToArray())
+            {
+                if (bluetoothScanIncomplete && last.Device.Connection == "蓝牙" && IsRecent(last.At, at))
+                    batch.Add(last.Device with { IsCharging = null, LastKnownAt = last.At });
+                else
+                    latest.Remove(id);
+            }
+            publish(batch, alerts);
+        }
 
         var jumps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var devices = new List<BatteryDevice>(first.Length);
@@ -38,7 +56,7 @@ internal sealed class BatteryHistory
             }
             devices.Add(Record(device, percent, firstAt, low));
         }
-        publish(devices, low);
+        Publish(devices, low, firstAt);
         if (jumps.Count == 0)
             return;
 
@@ -76,7 +94,7 @@ internal sealed class BatteryHistory
             else
                 updated.Add(Record(device, null, finishedAt, confirmedLow));
         }
-        publish(updated, confirmedLow);
+        Publish(updated, confirmedLow, finishedAt);
     }
 
     private BatteryDevice Record(BatteryDevice device, int? percent, DateTimeOffset at, List<BatteryDevice> low)
@@ -84,9 +102,14 @@ internal sealed class BatteryHistory
         if (percent is int fresh)
         {
             var current = device with { Percent = fresh, LastKnownAt = null };
-            if (fresh <= LowThreshold && latest.TryGetValue(device.Id, out var last) && last.Percent > LowThreshold)
+            latest.TryGetValue(device.Id, out var last);
+            bool alertSent = last?.AlertSent == true && fresh < AlertRecoveryLevel;
+            if (!alertSent && last?.Percent > LowThreshold && fresh <= LowThreshold)
+            {
                 low.Add(current);
-            latest[device.Id] = (fresh, at);
+                alertSent = true;
+            }
+            latest[device.Id] = new Confirmed(current, at, alertSent);
             return current;
         }
         if (latest.TryGetValue(device.Id, out var previous) && IsRecent(previous.At, at))

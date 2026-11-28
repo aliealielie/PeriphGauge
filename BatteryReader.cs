@@ -22,9 +22,11 @@ internal sealed record BatteryDevice(string Id, string Name, string Kind, string
         : IsCurrent && IsCharging == true ? "充电中" : string.Empty;
 }
 
-internal sealed class BatteryScan(List<BatteryDevice> devices, Dictionary<string, Func<Task<BatteryDevice?>>> rechecks)
+internal sealed class BatteryScan(List<BatteryDevice> devices, Dictionary<string, Func<Task<BatteryDevice?>>> rechecks,
+    bool bluetoothScanIncomplete)
 {
     internal List<BatteryDevice> Devices { get; } = devices;
+    internal bool BluetoothScanIncomplete { get; } = bluetoothScanIncomplete;
 
     internal async Task<List<BatteryDevice>> RecheckAsync(IReadOnlySet<string> ids)
     {
@@ -65,39 +67,43 @@ internal static class BatteryReader
             .OfType<BluetoothNode>()
             .ToArray();
 
-        var bluetooth = ReadBluetoothDevicesAsync(bluetoothNodes);
+        var bluetooth = ReadBluetoothDevicesAsync(bluetoothNodes, EnumerateBluetoothAsync(true), EnumerateBluetoothAsync(false));
         var usb = ReadReceiversAsync(instanceIds);
-        var results = await Task.WhenAll(bluetooth, usb).ConfigureAwait(false);
-        var readings = results.SelectMany(group => group)
+        await Task.WhenAll(bluetooth, usb).ConfigureAwait(false);
+        var (bluetoothDevices, incomplete) = await bluetooth.ConfigureAwait(false);
+        var readings = bluetoothDevices.Concat(await usb.ConfigureAwait(false))
             .OrderBy(reading => reading.Device.Connection == "蓝牙" ? 0 : 1)
             .ThenBy(reading => reading.Device.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
         return new BatteryScan(readings.Select(reading => reading.Device).ToList(),
-            readings.ToDictionary(reading => reading.Device.Id, reading => reading.Recheck, StringComparer.OrdinalIgnoreCase));
+            readings.ToDictionary(reading => reading.Device.Id, reading => reading.Recheck, StringComparer.OrdinalIgnoreCase),
+            incomplete);
     }
 
-    private static async Task<DeviceReading[]> ReadBluetoothDevicesAsync(BluetoothNode[] nodes)
+    private static async Task<(DeviceReading[] Devices, bool Incomplete)> ReadBluetoothDevicesAsync(BluetoothNode[] nodes,
+        Task<BluetoothEndpoint[]?> le, Task<BluetoothEndpoint[]?> classic)
     {
-        var le = EnumerateBluetoothAsync(true);
-        var classic = EnumerateBluetoothAsync(false);
-        var endpoints = (await Task.WhenAll(le, classic).ConfigureAwait(false))
-            .SelectMany(group => group);
+        var queries = await Task.WhenAll(le, classic).ConfigureAwait(false);
+        bool incomplete = queries.Any(group => group is null);
+        var endpoints = queries.OfType<BluetoothEndpoint[]>().SelectMany(group => group);
         var devices = await Task.WhenAll(endpoints.Select(endpoint => ReadEndpointAsync(endpoint, nodes)))
             .ConfigureAwait(false);
 
-        return devices.GroupBy(reading => reading.Device.Id, StringComparer.OrdinalIgnoreCase)
+        var grouped = devices.GroupBy(reading => reading.Device.Id, StringComparer.OrdinalIgnoreCase)
             .Select(group =>
             {
                 var preferred = group.FirstOrDefault(reading => reading.Device.Percent.HasValue) ?? group.First();
                 var alternatives = group.Where(reading => reading != preferred).ToArray();
-                return alternatives.Length == 0
+                return alternatives.Length == 0 && !incomplete
                     ? preferred
-                    : preferred with { Recheck = () => RecheckBluetoothAliasesAsync(preferred, alternatives) };
+                    : preferred with { Recheck = () => RecheckBluetoothAliasesAsync(preferred, alternatives, incomplete) };
             })
             .ToArray();
+        return (grouped, incomplete);
     }
 
-    private static async Task<BatteryDevice?> RecheckBluetoothAliasesAsync(DeviceReading preferred, DeviceReading[] alternatives)
+    private static async Task<BatteryDevice?> RecheckBluetoothAliasesAsync(DeviceReading preferred, DeviceReading[] alternatives,
+        bool incomplete)
     {
         var available = await preferred.Recheck().ConfigureAwait(false);
         if (available?.Percent is not null)
@@ -110,10 +116,11 @@ internal static class BatteryReader
                 return reading;
             available ??= reading;
         }
-        return available;
+        // LE and classic endpoints may share a physical ID. A failed query can hide a connected alias.
+        return available ?? (incomplete ? preferred.Device with { Percent = null, IsCharging = null } : null);
     }
 
-    private static async Task<BluetoothEndpoint[]> EnumerateBluetoothAsync(bool isLowEnergy)
+    private static async Task<BluetoothEndpoint[]?> EnumerateBluetoothAsync(bool isLowEnergy)
     {
         try
         {
@@ -130,7 +137,7 @@ internal static class BatteryReader
         }
         catch (Exception ex) when (ex is COMException or UnauthorizedAccessException or OperationCanceledException)
         {
-            return [];
+            return null;
         }
     }
 

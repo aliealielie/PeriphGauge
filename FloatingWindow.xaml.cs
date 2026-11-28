@@ -25,7 +25,7 @@ public partial class FloatingWindow : Window
     private DrawingPoint? preferredLocation;
     private PointerPress? pointerPress;
     private bool isExpanded;
-    private bool hasHistoricalReadings;
+    private bool needsRefreshOnOpen;
     private DockEdge dockEdge;
     private bool dragging;
 
@@ -44,7 +44,7 @@ public partial class FloatingWindow : Window
     internal void SetDevices(IReadOnlyList<BatteryDevice> devices)
     {
         var rows = devices.Select((device, index) => ToRow(device, index > 0)).ToArray();
-        hasHistoricalReadings = rows.Any(row => row.IsHistorical);
+        needsRefreshOnOpen = devices.Any(device => !device.IsCurrent);
         DeviceCount.Text = $"{rows.Length} 台";
         DeviceItems.ItemsSource = rows;
         CompactItems.ItemsSource = rows
@@ -60,7 +60,7 @@ public partial class FloatingWindow : Window
 
     internal void SetError()
     {
-        hasHistoricalReadings = false;
+        needsRefreshOnOpen = true;
         DeviceCount.Text = string.Empty;
         DeviceItems.ItemsSource = null;
         CompactItems.ItemsSource = null;
@@ -150,7 +150,7 @@ public partial class FloatingWindow : Window
     {
         var screen = Screen.FromHandle(new WindowInteropHelper(this).Handle);
         SavePlacement(preferredLocation ?? screen.WorkingArea.Location, DockEdge.None, screen);
-        RefreshHistoricalReadings();
+        RefreshIfNeeded();
     }
 
     private void SetExpandedByUser(bool expanded)
@@ -159,12 +159,12 @@ public partial class FloatingWindow : Window
             return;
         ExpansionChangedByUser?.Invoke(this, expanded);
         if (expanded)
-            RefreshHistoricalReadings();
+            RefreshIfNeeded();
     }
 
-    private void RefreshHistoricalReadings()
+    private void RefreshIfNeeded()
     {
-        if (hasHistoricalReadings)
+        if (needsRefreshOnOpen)
             RefreshRequested?.Invoke(this, EventArgs.Empty);
     }
 

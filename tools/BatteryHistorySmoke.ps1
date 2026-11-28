@@ -18,6 +18,7 @@ public static class BatteryHistorySmoke
         await FailedConfirmation();
         await DisconnectedDevice();
         await LowBatteryCrossings();
+        await IncompleteBluetoothScan();
     }
 
     private static async Task ShortGaps()
@@ -108,10 +109,55 @@ public static class BatteryHistorySmoke
         fixture.CheckAlerts(1, "a");
         await fixture.Refresh([Device("A", 16), Device("B", null), Device("C", 19)]);
         fixture.CheckAlerts(0);
-        await fixture.Refresh([Device("A", 22), Device("B", 19)]);
+        await fixture.Refresh([Device("A", 24), Device("B", 19)]);
         fixture.CheckAlerts(0);
         await fixture.Refresh([Device("A", 20), Device("B", 21), Device("C", 18)]);
+        fixture.CheckAlerts(0);
+        await fixture.Refresh([Device("A", 25), Device("B", 20)]);
+        fixture.CheckAlerts(0);
+        await fixture.Refresh([Device("A", 20), Device("B", 19)]);
         fixture.CheckAlerts(0, "A");
+    }
+
+    private static async Task IncompleteBluetoothScan()
+    {
+        var fixture = new Fixture();
+        var headset = new BatteryDevice("bt", "耳机", "headphones", "蓝牙", 21);
+        var mouse = Device("usb", 55);
+        var measuredAt = fixture.Now;
+        await fixture.Refresh([headset, mouse, Device("removed-usb", 30)]);
+        await fixture.Refresh([headset with { Percent = 20, IsCharging = true }, mouse, Device("removed-usb", 30)]);
+        fixture.CheckAlerts(0, "bt");
+
+        fixture.BluetoothScanIncomplete = true;
+        fixture.Now = measuredAt.AddMinutes(1);
+        await fixture.Refresh([mouse with { Percent = 70 }], [mouse with { Percent = 70 }]);
+        if (!fixture.Rechecked.SetEquals(["usb"]))
+            throw new InvalidOperationException("An unenumerated Bluetooth device was reread.");
+        foreach (var (devices, alerts) in fixture.Updates)
+        {
+            if (devices.Count != 2 || alerts.Count != 0 || devices.Single(d => d.Id == "bt") !=
+                (headset with { Percent = 20, IsCharging = null, LastKnownAt = measuredAt }))
+                throw new InvalidOperationException("A partial scan lost Bluetooth history, replayed an alert or retained an absent USB receiver.");
+        }
+        await fixture.Refresh([headset with { Percent = 21 }]);
+        fixture.CheckAlerts(0);
+        await fixture.Refresh([headset with { Percent = 20 }]);
+        fixture.CheckAlerts(0);
+        measuredAt = fixture.Now;
+        fixture.Now = measuredAt.AddSeconds(599);
+        Check(await fixture.Refresh(new List<BatteryDevice>()), 20, null, measuredAt);
+        fixture.Now = measuredAt.AddMinutes(10);
+        if ((await fixture.Refresh(new List<BatteryDevice>())).Count != 0)
+            throw new InvalidOperationException("Bluetooth history outlived its ten-minute limit.");
+
+        await fixture.Refresh([headset]);
+        fixture.BluetoothScanIncomplete = false;
+        if ((await fixture.Refresh(new List<BatteryDevice>())).Count != 0)
+            throw new InvalidOperationException("A complete scan retained a disconnected Bluetooth device.");
+        fixture.BluetoothScanIncomplete = true;
+        if ((await fixture.Refresh(new List<BatteryDevice>())).Count != 0)
+            throw new InvalidOperationException("A partial scan restored a previously disconnected device.");
     }
 
     private static BatteryDevice Device(string id, int? percent, bool? isCharging = null) =>
@@ -129,6 +175,7 @@ public static class BatteryHistorySmoke
         private readonly BatteryHistory history = new();
         internal DateTimeOffset Now { get; set; } = new(2026, 1, 1, 8, 0, 0, TimeSpan.FromHours(8));
         internal TimeSpan ScanDuration { get; set; }
+        internal bool BluetoothScanIncomplete { get; set; }
         internal IReadOnlySet<string> Rechecked { get; private set; } = new HashSet<string>();
         internal List<(List<BatteryDevice> Devices, List<BatteryDevice> Alerts)> Updates { get; } = [];
 
@@ -144,7 +191,7 @@ public static class BatteryHistorySmoke
             int calls = 1;
             bool publishedBeforeRecheck = false;
             Now += ScanDuration;
-            await history.ApplyAsync(scans[0]!, ids =>
+            await history.ApplyAsync(scans[0]!, BluetoothScanIncomplete, ids =>
             {
                 publishedBeforeRecheck = Updates.Count == 1;
                 Rechecked = ids;
